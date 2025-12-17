@@ -77,7 +77,7 @@ export default function SetupClient() {
       const { data } = await supabase
         .from('agents')
         .select('id, name, description, created_at')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }) as { data: Panel[] | null };
       
       setPanels(data || []);
       setState(data && data.length > 0 ? 'dashboard' : 'ready_for_setup');
@@ -105,7 +105,7 @@ export default function SetupClient() {
         .from('agents')
         .select('id, name')
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(1) as { data: { id: string; name: string }[] | null };
       
       if (data && data.length > 0) {
         const latestPanel = data[0];
