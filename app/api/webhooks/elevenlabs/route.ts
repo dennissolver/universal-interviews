@@ -271,7 +271,7 @@ export async function POST(request: NextRequest) {
       endpoint: '/api/webhooks/elevenlabs',
       payload: { error: error.message },
       status: 'failed',
-    }).catch(() => {});
+    });
 
     return NextResponse.json(
       { error: error.message || 'Webhook processing failed' },
