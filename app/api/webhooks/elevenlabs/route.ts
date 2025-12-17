@@ -1,154 +1,122 @@
-// app/api/webhooks/elevenlabs/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateInterviewReadyPayload } from '@/app/lib/interviews/schema';
-import { createIdempotencyKey, enforceLimits } from '@/app/lib/interviews/guards';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(request: NextRequest) {
+/**
+ * ElevenLabs Webhook
+ *
+ * Responsibilities:
+ * 1. Receive post_call_transcription events
+ * 2. Locate the ACTIVE interview created at interview start
+ * 3. Persist the FULL transcript JSON (single row)
+ * 4. Attach analysis + metadata if present
+ * 5. Mark interview as completed
+ * 6. Be fully idempotent (safe on retries)
+ */
+export async function POST(req: NextRequest) {
   try {
-    const payload = await request.json();
+    const payload = await req.json();
 
-    // ----------------------------------
-    // Extract final agent message
-    // ----------------------------------
-    const finalText =
-      payload?.message?.text ||
-      payload?.final_message ||
-      payload?.output_text;
+    // ---------------------------------------------------------------------
+    // Only handle completed transcripts
+    // ---------------------------------------------------------------------
+    if (payload.type !== 'post_call_transcription') {
+      return NextResponse.json({ status: 'ignored', reason: 'unsupported_event' });
+    }
 
-    if (!finalText) {
+    const agentId = payload.agent_id;
+    const conversationId = payload.conversation_id;
+    const transcript = payload.transcript;
+
+    if (!agentId || !Array.isArray(transcript) || transcript.length === 0) {
       return NextResponse.json({
         status: 'ignored',
-        reason: 'no final message',
+        reason: 'missing_agent_or_transcript',
       });
     }
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(finalText);
-    } catch {
-      return NextResponse.json({
-        status: 'ignored',
-        reason: 'final message not JSON',
-      });
-    }
-
-    // ----------------------------------
-    // Schema validation
-    // ----------------------------------
-    const validation = validateInterviewReadyPayload(parsed);
-    if (!validation.valid) {
-      await logDeadLetter(parsed, validation.error);
-      return NextResponse.json({
-        status: 'rejected',
-        reason: validation.error,
-      });
-    }
-
-    const { panel } = validation.data;
-
-    // ----------------------------------
-    // Guardrails
-    // ----------------------------------
-    try {
-      enforceLimits(panel);
-    } catch (err: any) {
-      await logDeadLetter(parsed, err.message);
-      return NextResponse.json({
-        status: 'rejected',
-        reason: err.message,
-      });
-    }
-
-    // ----------------------------------
-    // Idempotency
-    // ----------------------------------
-    const idempotencyKey = createIdempotencyKey(parsed);
-
-    const { data: existing } = await supabase
-      .from('processed_events')
+    // ---------------------------------------------------------------------
+    // 1️⃣ Find the ACTIVE interview created on "Start Interview"
+    // ---------------------------------------------------------------------
+    const { data: interview, error: interviewError } = await supabase
+      .from('interviews')
       .select('id')
-      .eq('idempotency_key', idempotencyKey)
+      .eq('elevenlabs_agent_id', agentId)
+      .eq('status', 'active')
+      .order('started_at', { ascending: false })
+      .limit(1)
       .single();
 
-    if (existing) {
+    if (interviewError || !interview) {
+      console.error('No active interview found for agent:', agentId);
       return NextResponse.json({
-        status: 'duplicate',
-        ignored: true,
+        status: 'ignored',
+        reason: 'no_active_interview',
       });
     }
 
-    // ----------------------------------
-    // Internal create-panel call
-    // ----------------------------------
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-    if (!baseUrl) {
-      throw new Error('NEXT_PUBLIC_BASE_URL is not configured');
+    // ---------------------------------------------------------------------
+    // 2️⃣ Idempotency: do not re-insert transcript
+    // ---------------------------------------------------------------------
+    const { data: existingTranscript } = await supabase
+      .from('interview_transcripts')
+      .select('id')
+      .eq('interview_id', interview.id)
+      .single();
+
+    if (existingTranscript) {
+      return NextResponse.json({
+        status: 'duplicate',
+        interviewId: interview.id,
+      });
     }
 
-    const res = await fetch(`${baseUrl}/api/tools/create-panel`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(panel),
+    // ---------------------------------------------------------------------
+    // 3️⃣ Persist FULL transcript payload (JSONB)
+    // ---------------------------------------------------------------------
+    await supabase.from('interview_transcripts').insert({
+      interview_id: interview.id,
+      elevenlabs_conversation_id: conversationId ?? null,
+      elevenlabs_agent_id: agentId,
+      transcript: transcript,                 // FULL transcript array
+      analysis: payload.analysis ?? null,      // optional
+      metadata: payload.metadata ?? null,      // optional
+      status: 'completed',
+      received_at: new Date().toISOString(),
     });
 
-    if (!res.ok) {
-      const error = await res.text();
-      await logDeadLetter(parsed, error);
-      throw new Error(`create-panel failed: ${error}`);
-    }
-
-    const result = await res.json();
-
-    // ----------------------------------
-    // Mark processed
-    // ----------------------------------
-    await supabase.from('processed_events').insert({
-      idempotency_key: idempotencyKey,
-      panel_id: result.panelId,
-    });
+    // ---------------------------------------------------------------------
+    // 4️⃣ Mark interview as completed
+    // ---------------------------------------------------------------------
+    await supabase
+      .from('interviews')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', interview.id);
 
     return NextResponse.json({
       success: true,
-      panelId: result.panelId,
-      interviewUrl: result.interviewUrl,
+      interviewId: interview.id,
+      turns: transcript.length,
     });
   } catch (err: any) {
-    await logDeadLetter(
-      { error: err.message },
-      'Unhandled webhook failure'
-    );
-
+    console.error('ElevenLabs webhook error:', err);
     return NextResponse.json(
-      { error: err.message || 'Webhook failed' },
+      { error: err.message || 'Webhook processing failed' },
       { status: 500 }
     );
   }
 }
 
 /**
- * Dead-letter logging (never throws)
+ * Health check
  */
-async function logDeadLetter(payload: any, reason: string) {
-  try {
-    await supabase.from('dead_letter_events').insert({
-      source: 'elevenlabs',
-      reason,
-      payload,
-    });
-  } catch {
-    // Never block execution
-  }
-}
-
 export async function GET() {
   return NextResponse.json({
     status: 'active',
