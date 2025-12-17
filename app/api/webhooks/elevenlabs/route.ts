@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
       headers: Object.fromEntries(request.headers.entries()),
       payload: payload,
       status: 'processing',
-    }).catch(err => console.log('Webhook log failed:', err));
+    });
 
     // Extract transcript from ElevenLabs post_call_transcription webhook
     // Format: { type: "post_call_transcription", data: { transcript: [{role, message}...] } }
