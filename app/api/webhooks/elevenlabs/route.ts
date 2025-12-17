@@ -2,13 +2,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import {
-  validateInterviewReadyPayload,
-} from '@/app/lib/interviews/schema';
-import {
-  createIdempotencyKey,
-  enforceLimits,
-} from '@/app/lib/interviews/guards';
+import { validateInterviewReadyPayload } from '@/app/lib/interviews/schema';
+import { createIdempotencyKey, enforceLimits } from '@/app/lib/interviews/guards';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,41 +14,61 @@ export async function POST(request: NextRequest) {
   try {
     const payload = await request.json();
 
-    // Extract final message
+    // ----------------------------------
+    // Extract final agent message
+    // ----------------------------------
     const finalText =
       payload?.message?.text ||
       payload?.final_message ||
       payload?.output_text;
 
     if (!finalText) {
-      return NextResponse.json({ status: 'ignored', reason: 'no final message' });
+      return NextResponse.json({
+        status: 'ignored',
+        reason: 'no final message',
+      });
     }
 
     let parsed: any;
     try {
       parsed = JSON.parse(finalText);
     } catch {
-      return NextResponse.json({ status: 'ignored', reason: 'final message not JSON' });
+      return NextResponse.json({
+        status: 'ignored',
+        reason: 'final message not JSON',
+      });
     }
 
+    // ----------------------------------
     // Schema validation
+    // ----------------------------------
     const validation = validateInterviewReadyPayload(parsed);
     if (!validation.valid) {
       await logDeadLetter(parsed, validation.error);
-      return NextResponse.json({ status: 'rejected', reason: validation.error });
+      return NextResponse.json({
+        status: 'rejected',
+        reason: validation.error,
+      });
     }
 
     const { panel } = validation.data;
 
-    // Guardrail limits
+    // ----------------------------------
+    // Guardrails
+    // ----------------------------------
     try {
       enforceLimits(panel);
     } catch (err: any) {
       await logDeadLetter(parsed, err.message);
-      return NextResponse.json({ status: 'rejected', reason: err.message });
+      return NextResponse.json({
+        status: 'rejected',
+        reason: err.message,
+      });
     }
 
+    // ----------------------------------
     // Idempotency
+    // ----------------------------------
     const idempotencyKey = createIdempotencyKey(parsed);
 
     const { data: existing } = await supabase
@@ -63,23 +78,27 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (existing) {
-      return NextResponse.json({ status: 'duplicate', ignored: true });
+      return NextResponse.json({
+        status: 'duplicate',
+        ignored: true,
+      });
     }
 
-    // Create panel
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_URL}/api/tools/create-panel`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(process.env.ELEVENLABS_WEBHOOK_SECRET && {
-            'X-Shared-Secret': process.env.ELEVENLABS_WEBHOOK_SECRET,
-          }),
-        },
-        body: JSON.stringify(panel),
-      }
-    );
+    // ----------------------------------
+    // Internal create-panel call
+    // ----------------------------------
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    if (!baseUrl) {
+      throw new Error('NEXT_PUBLIC_BASE_URL is not configured');
+    }
+
+    const res = await fetch(`${baseUrl}/api/tools/create-panel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(panel),
+    });
 
     if (!res.ok) {
       const error = await res.text();
@@ -89,7 +108,9 @@ export async function POST(request: NextRequest) {
 
     const result = await res.json();
 
-    // Mark event as processed
+    // ----------------------------------
+    // Mark processed
+    // ----------------------------------
     await supabase.from('processed_events').insert({
       idempotency_key: idempotencyKey,
       panel_id: result.panelId,
@@ -101,7 +122,11 @@ export async function POST(request: NextRequest) {
       interviewUrl: result.interviewUrl,
     });
   } catch (err: any) {
-    await logDeadLetter({ error: err.message }, 'Unhandled webhook failure');
+    await logDeadLetter(
+      { error: err.message },
+      'Unhandled webhook failure'
+    );
+
     return NextResponse.json(
       { error: err.message || 'Webhook failed' },
       { status: 500 }

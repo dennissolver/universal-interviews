@@ -9,15 +9,11 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify webhook secret if configured
-    const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const providedSecret = request.headers.get('X-Shared-Secret');
-      if (providedSecret !== webhookSecret) {
-        console.error('Invalid webhook secret');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    }
+    /**
+     * This endpoint is called internally by our own webhook handler.
+     * It does NOT verify ElevenLabs webhook signatures.
+     * ElevenLabs auth happens only when calling their API.
+     */
 
     const body = await request.json();
     console.log('Create panel request:', JSON.stringify(body, null, 2));
@@ -33,23 +29,43 @@ export async function POST(request: NextRequest) {
       duration_minutes,
     } = body;
 
-    // Validate required fields
-    if (!name) {
-      return NextResponse.json({ error: 'Panel name is required' }, { status: 400 });
+    // -----------------------------
+    // Validation
+    // -----------------------------
+    if (!name || typeof name !== 'string') {
+      return NextResponse.json(
+        { error: 'Panel name is required' },
+        { status: 400 }
+      );
     }
 
-    // Parse questions - could be string (comma-separated) or array
+    // Parse questions (array preferred)
     let questionsList: string[] = [];
-    if (typeof questions === 'string') {
-      questionsList = questions.split(',').map((q: string) => q.trim()).filter((q: string) => q.length > 0);
-    } else if (Array.isArray(questions)) {
+    if (Array.isArray(questions)) {
       questionsList = questions;
+    } else if (typeof questions === 'string') {
+      questionsList = questions
+        .split(',')
+        .map((q) => q.trim())
+        .filter(Boolean);
     }
 
-    // Create ElevenLabs interview agent
+    if (questionsList.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one interview question is required' },
+        { status: 400 }
+      );
+    }
+
+    // -----------------------------
+    // ElevenLabs agent creation
+    // -----------------------------
     const elevenlabsApiKey = process.env.ELEVENLABS_API_KEY;
     if (!elevenlabsApiKey) {
-      return NextResponse.json({ error: 'ELEVENLABS_API_KEY not configured' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'ELEVENLABS_API_KEY not configured' },
+        { status: 500 }
+      );
     }
 
     const interviewPrompt = `You are an AI interviewer for "${name}".
@@ -57,37 +73,38 @@ export async function POST(request: NextRequest) {
 ## Context
 ${description || 'Conducting interviews to gather insights.'}
 
-## Your Style
+## Style
 - Tone: ${tone || 'professional yet friendly'}
 - Target audience: ${target_audience || 'participants'}
 - Duration: ${duration_minutes || 15} minutes
 
 ## Interview Flow
-1. Start with your greeting
-2. Ask the questions one at a time
-3. Listen carefully and ask follow-up questions if needed
-4. Thank them and end with your closing message
+1. Start with the greeting
+2. Ask one question at a time
+3. Ask follow-ups when useful
+4. End with the closing message
 
-## Questions to Cover
+## Questions
 ${questionsList.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
 ## Rules
+- One question at a time
 - Be conversational and natural
-- ONE question at a time
-- Listen actively and acknowledge responses
-- Keep responses under 50 words
-- Stay on topic but allow natural conversation flow`;
+- Keep responses concise
+- Stay on topic`;
 
     const agentConfig = {
-      name: name,
+      name,
       conversation_config: {
         agent: {
           prompt: { prompt: interviewPrompt },
-          first_message: greeting || `Hello! Thank you for joining this interview about ${name}. I have a few questions for you today. Let's get started!`,
+          first_message:
+            greeting ??
+            `Hello! Thank you for joining this interview about ${name}. Let’s get started.`,
           language: 'en',
         },
         tts: {
-          voice_id: 'EXAVITQu4vr4xnSDxMaL', // Female voice
+          voice_id: 'EXAVITQu4vr4xnSDxMaL',
           model_id: 'eleven_flash_v2',
         },
         stt: { provider: 'elevenlabs' },
@@ -97,45 +114,56 @@ ${questionsList.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
     console.log('Creating ElevenLabs interview agent:', name);
 
-    const createRes = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
-      method: 'POST',
-      headers: {
-        'xi-api-key': elevenlabsApiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(agentConfig),
-    });
+    const createRes = await fetch(
+      'https://api.elevenlabs.io/v1/convai/agents/create',
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': elevenlabsApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(agentConfig),
+      }
+    );
 
     if (!createRes.ok) {
-      const error = await createRes.json();
+      const error = await createRes.text();
       console.error('ElevenLabs agent creation failed:', error);
       return NextResponse.json(
-        { error: `Failed to create interview agent: ${error.detail?.message || JSON.stringify(error)}` },
+        { error: 'Failed to create ElevenLabs interview agent' },
         { status: 400 }
       );
     }
 
     const agent = await createRes.json();
-    console.log('ElevenLabs interview agent created:', agent.agent_id);
+    console.log('ElevenLabs agent created:', agent.agent_id);
 
-    // Generate slug from name
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50);
+    // -----------------------------
+    // Persist panel in Supabase
+    // -----------------------------
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50);
 
-    // Save to Supabase
     const { data: panel, error: dbError } = await supabase
       .from('agents')
       .insert({
-        name: name,
-        slug: slug,
+        name,
+        slug,
         description: description || '',
         elevenlabs_agent_id: agent.agent_id,
-        greeting: greeting || agentConfig.conversation_config.agent.first_message,
+        greeting:
+          greeting ??
+          agentConfig.conversation_config.agent.first_message,
         questions: questionsList,
         settings: {
           tone: tone || 'professional',
           duration_minutes: duration_minutes || 15,
           target_audience: target_audience || '',
-          closing_message: closing_message || 'Thank you for your time!',
+          closing_message:
+            closing_message || 'Thank you for your time!',
         },
         status: 'active',
       })
@@ -150,20 +178,18 @@ ${questionsList.map((q, i) => `${i + 1}. ${q}`).join('\n')}
       );
     }
 
-    console.log('Panel saved to Supabase:', panel.id);
+    console.log('Panel saved:', panel.id);
 
     return NextResponse.json({
       success: true,
-      message: `Interview panel "${name}" created successfully!`,
       panelId: panel.id,
       agentId: agent.agent_id,
       interviewUrl: `/i/${panel.id}`,
     });
-
-  } catch (error: any) {
-    console.error('Create panel error:', error);
+  } catch (err: any) {
+    console.error('Create panel error:', err);
     return NextResponse.json(
-      { error: error.message || 'Failed to create panel' },
+      { error: err.message || 'Failed to create panel' },
       { status: 500 }
     );
   }
@@ -171,5 +197,8 @@ ${questionsList.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
 // Health check
 export async function GET() {
-  return NextResponse.json({ status: 'active', endpoint: 'create-panel' });
+  return NextResponse.json({
+    status: 'active',
+    endpoint: 'create-panel',
+  });
 }
