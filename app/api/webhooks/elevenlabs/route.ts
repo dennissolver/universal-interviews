@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { extractParticipantDetails } from '@/app/lib/interviews/extractParticipant';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,25 +13,32 @@ const supabase = createClient(
  * Responsibilities:
  * 1. Receive post_call_transcription events
  * 2. Locate the ACTIVE interview created at interview start
- * 3. Persist the FULL transcript JSON (single row)
- * 4. Attach analysis + metadata if present
+ * 3. Persist the FULL transcript JSON
+ * 4. Extract + persist participant details
  * 5. Mark interview as completed
- * 6. Be fully idempotent (safe on retries)
+ * 6. Be idempotent
  */
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
 
-    // ---------------------------------------------------------------------
-    // Only handle completed transcripts
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------
+    // Only handle transcript completion events
+    // -------------------------------------------------------------
     if (payload.type !== 'post_call_transcription') {
       return NextResponse.json({ status: 'ignored', reason: 'unsupported_event' });
     }
 
-    const agentId = payload.agent_id;
-    const conversationId = payload.conversation_id;
-    const transcript = payload.transcript;
+    const agentId =
+      payload.agent_id ?? payload.data?.agent_id ?? null;
+
+    const conversationId =
+      payload.conversation_id ?? payload.data?.conversation_id ?? null;
+
+    const transcript =
+      payload.transcript ??
+      payload.data?.transcript ??
+      null;
 
     if (!agentId || !Array.isArray(transcript) || transcript.length === 0) {
       return NextResponse.json({
@@ -39,9 +47,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ---------------------------------------------------------------------
-    // 1️⃣ Find the ACTIVE interview created on "Start Interview"
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------
+    // 1️⃣ Find ACTIVE interview
+    // -------------------------------------------------------------
     const { data: interview, error: interviewError } = await supabase
       .from('interviews')
       .select('id')
@@ -59,51 +67,61 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ---------------------------------------------------------------------
-    // 2️⃣ Idempotency: do not re-insert transcript
-    // ---------------------------------------------------------------------
-    const { data: existingTranscript } = await supabase
+    // -------------------------------------------------------------
+    // 2️⃣ Idempotency check
+    // -------------------------------------------------------------
+    const { data: existing } = await supabase
       .from('interview_transcripts')
       .select('id')
       .eq('interview_id', interview.id)
       .single();
 
-    if (existingTranscript) {
+    if (existing) {
       return NextResponse.json({
         status: 'duplicate',
         interviewId: interview.id,
       });
     }
 
-    // ---------------------------------------------------------------------
-    // 3️⃣ Persist FULL transcript payload (JSONB)
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------
+    // 3️⃣ Extract participant details from transcript
+    // -------------------------------------------------------------
+    const participant = extractParticipantDetails(transcript);
+
+    // -------------------------------------------------------------
+    // 4️⃣ Persist transcript
+    // -------------------------------------------------------------
     await supabase.from('interview_transcripts').insert({
       interview_id: interview.id,
-      elevenlabs_conversation_id: conversationId ?? null,
+      elevenlabs_conversation_id: conversationId,
       elevenlabs_agent_id: agentId,
-      transcript: transcript,                 // FULL transcript array
-      analysis: payload.analysis ?? null,      // optional
-      metadata: payload.metadata ?? null,      // optional
+      transcript,
+      analysis: payload.analysis ?? payload.data?.analysis ?? null,
+      metadata: payload.metadata ?? payload.data?.metadata ?? null,
       status: 'completed',
       received_at: new Date().toISOString(),
     });
 
-    // ---------------------------------------------------------------------
-    // 4️⃣ Mark interview as completed
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------
+    // 5️⃣ Mark interview completed + persist participant fields
+    // -------------------------------------------------------------
     await supabase
       .from('interviews')
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
+        participant_name: participant.name,
+        participant_company: participant.company,
+        participant_country: participant.country,
+        participant_investment_stage: participant.stage,
+        participant_sectors: participant.sectors,
       })
       .eq('id', interview.id);
 
     return NextResponse.json({
       success: true,
       interviewId: interview.id,
-      turns: transcript.length,
+      transcriptTurns: transcript.length,
     });
   } catch (err: any) {
     console.error('ElevenLabs webhook error:', err);
