@@ -68,23 +68,40 @@ export default function InterviewPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // INP-SAFE CLICK HANDLER (FAST)
+  // INP-SAFE START HANDLER
   // ---------------------------------------------------------------------------
   function startInterview() {
-    // Immediate UI update (critical for INP)
+    // Immediate UI feedback (critical for INP)
     setStatus('connecting');
 
     // Defer heavy work off the click event
-    queueMicrotask(beginInterview);
+    setTimeout(beginInterview, 0);
   }
 
   // ---------------------------------------------------------------------------
-  // HEAVY WORK (DEFERRED)
+  // Heavy async work (deferred)
   // ---------------------------------------------------------------------------
   async function beginInterview() {
     try {
+      if (!panel) throw new Error('Panel not loaded');
+
+      // 1️⃣ Create interview instance
+      const res = await fetch('/api/interviews/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          panelId,
+          elevenlabsAgentId: panel.elevenlabs_agent_id,
+          intervieweeId,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to start interview');
+      }
+
+      // 2️⃣ Update invite status (fire-and-forget)
       if (intervieweeId) {
-        // Fire-and-forget — DO NOT await (prevents blocking)
         fetch('/api/invites/update-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -92,42 +109,34 @@ export default function InterviewPage() {
         });
       }
 
+      // 3️⃣ Mount ElevenLabs widget
       const container = document.getElementById('widget-container');
-      if (!container || !panel?.elevenlabs_agent_id) {
-        setError('Interview agent not available');
-        setStatus('ready');
-        return;
-      }
+      if (!container) throw new Error('Widget container missing');
 
       const mountWidget = () => {
         container.innerHTML = '';
-
         const el = document.createElement('elevenlabs-convai');
         el.setAttribute('agent-id', panel.elevenlabs_agent_id);
-
         container.appendChild(el);
         setStatus('active');
       };
 
-      // Load ElevenLabs widget only once
       if (!document.querySelector('script[src*="convai-widget"]')) {
         const script = document.createElement('script');
         script.src = 'https://elevenlabs.io/convai-widget/index.js';
         script.async = true;
-
         script.onload = mountWidget;
         script.onerror = () => {
           setError('Failed to load interview widget');
           setStatus('ready');
         };
-
         document.body.appendChild(script);
       } else {
         mountWidget();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('Failed to start interview');
+      setError(err.message || 'Failed to start interview');
       setStatus('ready');
     }
   }
@@ -188,7 +197,7 @@ export default function InterviewPage() {
           )}
         </div>
 
-        {/* Widget container must always exist */}
+        {/* Widget container MUST always exist */}
         <div id="widget-container" className="mb-6" />
 
         {status === 'ready' && (

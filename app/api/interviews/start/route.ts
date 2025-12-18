@@ -7,38 +7,31 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { panelId, intervieweeId, elevenlabsAgentId } = body;
+  const { panelId, elevenlabsAgentId, intervieweeId } = await req.json();
 
-    if (!panelId || !elevenlabsAgentId) {
-      return NextResponse.json(
-        { error: 'panelId and elevenlabsAgentId required' },
-        { status: 400 }
-      );
-    }
-
-    const { data, error } = await supabase
-      .from('interviews')
-      .insert({
-        panel_id: panelId,
-        interviewee_id: intervieweeId ?? null,
-        elevenlabs_agent_id: elevenlabsAgentId,
-        status: 'active',
-        started_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
-
-    if (error) throw error;
-
-    return NextResponse.json({
-      interviewId: data.id,
-    });
-  } catch (err: any) {
+  if (!panelId || !elevenlabsAgentId) {
     return NextResponse.json(
-      { error: err.message || 'Failed to start interview' },
-      { status: 500 }
+      { error: 'panelId and elevenlabsAgentId required' },
+      { status: 400 }
     );
   }
+
+  const { data, error } = await supabase
+    .from('interviews')
+    .insert({
+      panel_id: panelId,
+      elevenlabs_agent_id: elevenlabsAgentId,
+      interviewee_id: intervieweeId ?? null,
+      status: 'active',
+      started_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Failed to create interview:', error);
+    return NextResponse.json({ error: 'Failed to start interview' }, { status: 500 });
+  }
+
+  return NextResponse.json({ interviewId: data.id });
 }
