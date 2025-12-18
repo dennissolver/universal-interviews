@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Phone, PhoneOff, Loader2, Bot, CheckCircle } from 'lucide-react';
 
@@ -27,10 +27,9 @@ export default function InterviewPage() {
   const [status, setStatus] =
     useState<'ready' | 'connecting' | 'active' | 'complete'>('ready');
   const [intervieweeId, setIntervieweeId] = useState<string | null>(null);
-  const [interviewId, setInterviewId] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Load panel
+  // Load panel + validate invite
   // ---------------------------------------------------------------------------
   useEffect(() => {
     loadPanel();
@@ -63,91 +62,85 @@ export default function InterviewPage() {
         const data = await res.json();
         setIntervieweeId(data.intervieweeId);
       }
-    } catch (err) {
-      console.error('Token validation failed:', err);
+    } catch {
+      // Non-fatal
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Start interview (creates interview FIRST, then mounts ElevenLabs)
+  // INP-SAFE CLICK HANDLER (FAST)
   // ---------------------------------------------------------------------------
-  async function startInterview() {
+  function startInterview() {
+    // Immediate UI update (critical for INP)
     setStatus('connecting');
 
-    if (!panel?.elevenlabs_agent_id) {
-      setError('Interview agent not available');
-      setStatus('ready');
-      return;
-    }
+    // Defer heavy work off the click event
+    queueMicrotask(beginInterview);
+  }
 
-    // 1️⃣ Create interview session in backend
-    const startRes = await fetch('/api/interviews/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        panelId,
-        intervieweeId,
-        elevenlabsAgentId: panel.elevenlabs_agent_id,
-      }),
-    });
+  // ---------------------------------------------------------------------------
+  // HEAVY WORK (DEFERRED)
+  // ---------------------------------------------------------------------------
+  async function beginInterview() {
+    try {
+      if (intervieweeId) {
+        // Fire-and-forget — DO NOT await (prevents blocking)
+        fetch('/api/invites/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ intervieweeId, status: 'started' }),
+        });
+      }
 
-    if (!startRes.ok) {
-      setError('Failed to start interview session');
-      setStatus('ready');
-      return;
-    }
-
-    const { interviewId } = await startRes.json();
-    setInterviewId(interviewId);
-
-    // 2️⃣ Update invite status
-    if (intervieweeId) {
-      await fetch('/api/invites/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ intervieweeId, status: 'started' }),
-      });
-    }
-
-    // 3️⃣ Mount ElevenLabs widget
-    const container = document.getElementById('widget-container');
-    if (!container) {
-      setError('Widget container missing');
-      setStatus('ready');
-      return;
-    }
-
-    const mountWidget = () => {
-      container.innerHTML = '';
-
-      const el = document.createElement('elevenlabs-convai');
-      el.setAttribute('agent-id', panel.elevenlabs_agent_id);
-
-      container.appendChild(el);
-      setStatus('active');
-    };
-
-    if (!document.querySelector('script[src*="convai-widget"]')) {
-      const script = document.createElement('script');
-      script.src = 'https://elevenlabs.io/convai-widget/index.js';
-      script.async = true;
-      script.onload = mountWidget;
-      script.onerror = () => {
-        setError('Failed to load interview widget');
+      const container = document.getElementById('widget-container');
+      if (!container || !panel?.elevenlabs_agent_id) {
+        setError('Interview agent not available');
         setStatus('ready');
+        return;
+      }
+
+      const mountWidget = () => {
+        container.innerHTML = '';
+
+        const el = document.createElement('elevenlabs-convai');
+        el.setAttribute('agent-id', panel.elevenlabs_agent_id);
+
+        container.appendChild(el);
+        setStatus('active');
       };
-      document.body.appendChild(script);
-    } else {
-      mountWidget();
+
+      // Load ElevenLabs widget only once
+      if (!document.querySelector('script[src*="convai-widget"]')) {
+        const script = document.createElement('script');
+        script.src = 'https://elevenlabs.io/convai-widget/index.js';
+        script.async = true;
+
+        script.onload = mountWidget;
+        script.onerror = () => {
+          setError('Failed to load interview widget');
+          setStatus('ready');
+        };
+
+        document.body.appendChild(script);
+      } else {
+        mountWidget();
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Failed to start interview');
+      setStatus('ready');
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // End interview
+  // ---------------------------------------------------------------------------
   async function endInterview() {
     const container = document.getElementById('widget-container');
     if (container) container.innerHTML = '';
 
     if (intervieweeId) {
-      await fetch('/api/invites/update-status', {
+      fetch('/api/invites/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ intervieweeId, status: 'completed' }),
@@ -195,7 +188,7 @@ export default function InterviewPage() {
           )}
         </div>
 
-        {/* Widget container MUST always exist */}
+        {/* Widget container must always exist */}
         <div id="widget-container" className="mb-6" />
 
         {status === 'ready' && (
@@ -205,7 +198,8 @@ export default function InterviewPage() {
             </p>
             <button
               onClick={startInterview}
-              className="inline-flex items-center gap-3 bg-green-600 hover:bg-green-500 px-8 py-4 rounded-xl font-semibold text-lg transition-all hover:scale-105 shadow-lg shadow-green-500/25"
+              disabled={status !== 'ready'}
+              className="inline-flex items-center gap-3 bg-green-600 hover:bg-green-500 px-8 py-4 rounded-xl font-semibold text-lg transition-all hover:scale-105 shadow-lg shadow-green-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Phone className="w-6 h-6" />
               Start Interview
