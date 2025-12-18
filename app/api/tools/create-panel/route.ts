@@ -8,9 +8,9 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    // -----------------------------------------------------------------------
-    // Optional shared-secret protection (internal calls / webhooks only)
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Optional shared-secret protection (internal calls only)
+    // ---------------------------------------------------------------------
     const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET;
     if (webhookSecret) {
       const providedSecret = request.headers.get('X-Shared-Secret');
@@ -19,14 +19,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Parse request body
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Parse + validate request body
+    // ---------------------------------------------------------------------
     const body = await request.json();
 
     const {
       name,
       description,
+      interview_type,
       tone,
       greeting,
       questions,
@@ -35,16 +36,16 @@ export async function POST(request: NextRequest) {
       duration_minutes,
     } = body;
 
-    if (!name) {
+    if (!name || !interview_type) {
       return NextResponse.json(
-        { error: 'Panel name is required' },
+        { error: 'Panel name and interview_type are required' },
         { status: 400 }
       );
     }
 
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
     // Normalize questions
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
     let questionsList: string[] = [];
 
     if (Array.isArray(questions)) {
@@ -63,62 +64,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // -----------------------------------------------------------------------
-    // Build the FINAL interviewing agent system prompt
-    // -----------------------------------------------------------------------
+    const duration = duration_minutes || 15;
+    const finalTone = tone || 'professional and friendly';
+
+    // ---------------------------------------------------------------------
+    // FINAL interview agent system prompt (panel-driven, domain-agnostic)
+    // ---------------------------------------------------------------------
     const interviewPrompt = `
-You are an AI interviewer conducting an interview called "${name}".
+You are an AI interviewer conducting a "${interview_type}" interview.
 
-## Context
-${description || 'Conducting structured interviews to gather insights.'}
+INTERVIEW NAME
+"${name}"
 
-## Interview Structure
+PURPOSE
+${description || 'Conducting an interview to gather insights.'}
 
-### Part 1 — Participant Details (MANDATORY)
-At the start of EVERY interview, you MUST collect the following details.
-Ask ONE question at a time and wait for a response before proceeding.
+TARGET AUDIENCE
+${target_audience || 'Participants'}
 
-Ask in this exact order:
-1. Full name
-2. Company or fund name (or "Independent")
-3. Country they are based in
-4. General investment thesis or focus
-   (e.g. pre-seed, seed, Series A, growth, mixed)
-5. Primary sectors of interest
-   (e.g. technology, climate, fintech, health, infrastructure)
+TONE
+${finalTone}
 
-Rules for this section:
-- Never combine questions
-- Briefly acknowledge each answer
-- Accept high-level responses
-- Do not repeat unless unclear
+DURATION
+Approximately ${duration} minutes.
 
-After all five are collected, say:
-"Thank you — now I’ll move into the main interview questions."
+INTERVIEW RULES
+- Ask ONE question at a time
+- Wait for the participant to finish before continuing
+- Ask neutral follow-up questions only when clarification is needed
+- Do NOT assume background, expertise, or intent
+- Stay within the interview purpose
+- Do not give opinions or advice unless explicitly requested
+- Be respectful, calm, and conversational
 
-### Part 2 — Main Interview Questions
+QUESTIONS TO COVER
 ${questionsList.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
-## Style & Behaviour Rules
-- Tone: ${tone || 'professional and friendly'}
-- Target audience: ${target_audience || 'participants'}
-- Interview duration: ${duration_minutes || 15} minutes
-- Ask ONE question at a time
-- Be conversational and natural
-- Ask follow-ups only when useful
-- Keep responses concise
-- End by thanking the participant
+OPENING MESSAGE
+"${greeting || 'Hello! Thank you for joining today. Let’s get started.'}"
 
-Opening message:
-"${greeting || 'Hello! Thank you for joining today. I’ll start with a few quick questions to get to know you.'}"
+CLOSING MESSAGE
+"${closing_message || 'Thank you for your time and insights.'}"
+`.trim();
 
-Closing message:
-"${closing_message || 'Thank you for your time and insights — they are greatly appreciated.'}"
-`;
-
-    // -----------------------------------------------------------------------
-    // Create ElevenLabs agent
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Create ElevenLabs interview agent
+    // ---------------------------------------------------------------------
     const elevenlabsApiKey = process.env.ELEVENLABS_API_KEY;
     if (!elevenlabsApiKey) {
       return NextResponse.json(
@@ -142,20 +133,12 @@ Closing message:
               prompt: { prompt: interviewPrompt },
               first_message:
                 greeting ||
-                'Hello! Thank you for joining today. I’ll start with a few quick questions to get to know you.',
+                'Hello! Thank you for joining today. Let’s begin.',
               language: 'en',
             },
-            asr: {
-              provider: 'elevenlabs',
-              quality: 'high',
-            },
-            tts: {
-              voice_id: 'JBFqnCBsd6RMkjVDRZzb',
-            },
-            turn: {
-              mode: 'turn',
-              turn_timeout: 10,
-            },
+            asr: { provider: 'elevenlabs', quality: 'high' },
+            tts: { voice_id: 'JBFqnCBsd6RMkjVDRZzb' },
+            turn: { mode: 'turn', turn_timeout: 10 },
           },
           platform_settings: {
             auth: { enable_auth: false },
@@ -170,11 +153,10 @@ Closing message:
     }
 
     const agent = await createAgentRes.json();
-    const elevenlabsAgentId = agent.agent_id;
 
-    // -----------------------------------------------------------------------
-    // Persist panel in Supabase
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Persist panel
+    // ---------------------------------------------------------------------
     const slug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -187,33 +169,31 @@ Closing message:
         name,
         slug,
         description: description || '',
-        elevenlabs_agent_id: elevenlabsAgentId,
+        interview_type,
+        elevenlabs_agent_id: agent.agent_id,
         greeting,
         questions: questionsList,
         status: 'active',
         settings: {
-          tone: tone || 'professional',
-          duration_minutes: duration_minutes || 15,
+          tone: finalTone,
+          duration_minutes: duration,
           target_audience: target_audience || '',
           closing_message:
-            closing_message ||
-            'Thank you for your time and insights — they are greatly appreciated.',
+            closing_message || 'Thank you for your time and insights.',
         },
       })
       .select()
       .single();
 
-    if (dbError) {
-      throw dbError;
-    }
+    if (dbError) throw dbError;
 
-    // -----------------------------------------------------------------------
-    // Success response
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Success
+    // ---------------------------------------------------------------------
     return NextResponse.json({
       success: true,
       panelId: panel.id,
-      elevenlabsAgentId,
+      elevenlabsAgentId: agent.agent_id,
       interviewUrl: `/i/${panel.id}`,
     });
   } catch (error: any) {
