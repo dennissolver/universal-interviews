@@ -1,3 +1,4 @@
+// app/i/[panelId]/page.tsx
 'use client';
 
 export const dynamic = 'force-dynamic';
@@ -71,113 +72,157 @@ export default function InterviewPage() {
   // INP-SAFE START HANDLER
   // ---------------------------------------------------------------------------
   function startInterview() {
-    // Immediate UI feedback (critical for INP)
     setStatus('connecting');
-
-    // Defer heavy work off the click event
     setTimeout(beginInterview, 0);
   }
 
   // ---------------------------------------------------------------------------
   // Heavy async work (deferred)
   // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
-// Heavy async work (deferred)
-// ---------------------------------------------------------------------------
-async function beginInterview() {
-  try {
-    if (!panel) throw new Error('Panel not loaded');
+  async function beginInterview() {
+    try {
+      if (!panel) throw new Error('Panel not loaded');
 
-    // 1️⃣ Create interview instance
-    const res = await fetch('/api/interviews/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        panelId,
-        elevenlabsAgentId: panel.elevenlabs_agent_id,
-        intervieweeId,
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error('Failed to start interview');
-    }
-
-    const { interviewId } = await res.json(); // Capture interview ID
-
-    // 2️⃣ Update invite status (fire-and-forget)
-    if (intervieweeId) {
-      fetch('/api/invites/update-status', {
+      // 1️⃣ Create interview instance
+      const res = await fetch('/api/interviews/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ intervieweeId, status: 'started' }),
-      });
-    }
-
-    // 3️⃣ Mount ElevenLabs widget
-    const container = document.getElementById('widget-container');
-    if (!container) throw new Error('Widget container missing');
-
-    const mountWidget = () => {
-      container.innerHTML = '';
-      const el = document.createElement('elevenlabs-convai');
-      el.setAttribute('agent-id', panel.elevenlabs_agent_id);
-
-      // 4️⃣ Listen for conversation start to capture conversation_id
-el.addEventListener('elevenlabs-convai:conversation-started', async (event: any) => {
-  console.log('=== ELEVENLABS EVENT FIRED ===');
-  console.log('Full event:', event);
-  console.log('Event detail:', event.detail);
-
-  const conversationId = event.detail?.conversationId || event.detail?.conversation_id;
-  console.log('Extracted conversationId:', conversationId);
-  console.log('Interview ID:', interviewId);
-
-  if (conversationId && interviewId) {
-    console.log('Calling link-conversation API...');
-    const linkRes = await fetch('/api/interviews/link-conversation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        interviewId,
-        elevenlabsConversationId: conversationId,
-      }),
-    });
-    console.log('Link response:', await linkRes.json());
-  } else {
-    console.log('Missing data - cannot link');
-  }
-});
-
-      // 5️⃣ Listen for conversation end
-      el.addEventListener('elevenlabs-convai:conversation-ended', () => {
-        console.log('ElevenLabs conversation ended');
-        endInterview();
+        body: JSON.stringify({
+          panelId,
+          elevenlabsAgentId: panel.elevenlabs_agent_id,
+          intervieweeId,
+        }),
       });
 
-      container.appendChild(el);
-      setStatus('active');
-    };
+      if (!res.ok) {
+        throw new Error('Failed to start interview');
+      }
 
-    if (!document.querySelector('script[src*="convai-widget"]')) {
-      const script = document.createElement('script');
-      script.src = 'https://elevenlabs.io/convai-widget/index.js';
-      script.async = true;
-      script.onload = mountWidget;
-      script.onerror = () => {
-        setError('Failed to load interview widget');
-        setStatus('ready');
+      const { interviewId } = await res.json();
+      console.log('Interview started with ID:', interviewId);
+
+      // 2️⃣ Update invite status (fire-and-forget)
+      if (intervieweeId) {
+        fetch('/api/invites/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ intervieweeId, status: 'started' }),
+        });
+      }
+
+      // 3️⃣ Mount ElevenLabs widget
+      const container = document.getElementById('widget-container');
+      if (!container) throw new Error('Widget container missing');
+
+      const mountWidget = () => {
+        container.innerHTML = '';
+        const el = document.createElement('elevenlabs-convai');
+        el.setAttribute('agent-id', panel.elevenlabs_agent_id);
+
+        // =====================================================================
+        // DEBUG: Log ALL possible events to find the right one
+        // =====================================================================
+        el.addEventListener('elevenlabs-convai:call', (e: any) => {
+          console.log('📞 call event:', e.detail);
+        });
+
+        el.addEventListener('elevenlabs-convai:connect', (e: any) => {
+          console.log('🔗 connect event:', e.detail);
+        });
+
+        el.addEventListener('elevenlabs-convai:disconnect', (e: any) => {
+          console.log('❌ disconnect event:', e.detail);
+        });
+
+        el.addEventListener('elevenlabs-convai:message', (e: any) => {
+          console.log('💬 message event:', e.detail);
+        });
+
+        el.addEventListener('elevenlabs-convai:error', (e: any) => {
+          console.log('🚨 error event:', e.detail);
+        });
+
+        el.addEventListener('elevenlabs-convai:status-change', (e: any) => {
+          console.log('🔄 status-change event:', e.detail);
+        });
+
+        el.addEventListener('elevenlabs-convai:conversation', (e: any) => {
+          console.log('🎤 conversation event:', e.detail);
+        });
+
+        // =====================================================================
+        // 4️⃣ Listen for conversation start to capture conversation_id
+        // =====================================================================
+        el.addEventListener('elevenlabs-convai:conversation-started', async (event: any) => {
+          console.log('=== ELEVENLABS CONVERSATION-STARTED EVENT ===');
+          console.log('Full event:', event);
+          console.log('Event detail:', event.detail);
+
+          const conversationId = event.detail?.conversationId
+            || event.detail?.conversation_id
+            || event.detail?.id;
+          console.log('Extracted conversationId:', conversationId);
+          console.log('Interview ID:', interviewId);
+
+          if (conversationId && interviewId) {
+            console.log('Calling link-conversation API...');
+            try {
+              const linkRes = await fetch('/api/interviews/link-conversation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  interviewId,
+                  elevenlabsConversationId: conversationId,
+                }),
+              });
+              const linkData = await linkRes.json();
+              console.log('Link response:', linkData);
+            } catch (linkErr) {
+              console.error('Link API error:', linkErr);
+            }
+          } else {
+            console.log('Missing data - cannot link. conversationId:', conversationId, 'interviewId:', interviewId);
+          }
+        });
+
+        // =====================================================================
+        // 5️⃣ Listen for conversation end
+        // =====================================================================
+        el.addEventListener('elevenlabs-convai:conversation-ended', (event: any) => {
+          console.log('=== ELEVENLABS CONVERSATION-ENDED EVENT ===');
+          console.log('Full event:', event);
+          endInterview();
+        });
+
+        container.appendChild(el);
+        setStatus('active');
+        console.log('Widget mounted successfully');
       };
-      document.body.appendChild(script);
-    } else {
-      mountWidget();
+
+      if (!document.querySelector('script[src*="convai-widget"]')) {
+        const script = document.createElement('script');
+        script.src = 'https://elevenlabs.io/convai-widget/index.js';
+        script.async = true;
+        script.onload = () => {
+          console.log('ElevenLabs widget script loaded');
+          mountWidget();
+        };
+        script.onerror = () => {
+          console.error('Failed to load ElevenLabs widget script');
+          setError('Failed to load interview widget');
+          setStatus('ready');
+        };
+        document.body.appendChild(script);
+      } else {
+        console.log('Widget script already loaded, mounting directly');
+        mountWidget();
+      }
+    } catch (err: any) {
+      console.error('beginInterview error:', err);
+      setError(err.message || 'Failed to start interview');
+      setStatus('ready');
     }
-  } catch (err: any) {
-    console.error(err);
-    setError(err.message || 'Failed to start interview');
-    setStatus('ready');
   }
-}
 
   // ---------------------------------------------------------------------------
   // End interview
