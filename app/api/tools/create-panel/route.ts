@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
     // Parse + validate request body
     // ---------------------------------------------------------------------
     const body = await request.json();
+    console.log('create-panel received:', JSON.stringify(body, null, 2));
 
     const {
       name,
@@ -40,12 +41,16 @@ export async function POST(request: NextRequest) {
       company_name,
     } = body;
 
-    if (!name || !interview_type) {
+    // Only name is required - interview_type has a default
+    if (!name) {
       return NextResponse.json(
-        { error: 'Panel name and interview_type are required' },
+        { error: 'Panel name is required' },
         { status: 400 }
       );
     }
+
+    // Default interview_type if not provided
+    const finalInterviewType = interview_type || 'customer research';
 
     // ---------------------------------------------------------------------
     // Normalize questions
@@ -55,28 +60,33 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(questions)) {
       questionsList = questions;
     } else if (typeof questions === 'string') {
+      // Handle comma-separated, newline-separated, or natural language questions
       questionsList = questions
-        .split(',')
+        .split(/[,\n]+/)
         .map((q: string) => q.trim())
         .filter(Boolean);
     }
 
+    // If still no questions, create a default based on interview type
     if (questionsList.length === 0) {
-      return NextResponse.json(
-        { error: 'At least one interview question is required' },
-        { status: 400 }
-      );
+      questionsList = [
+        'Can you tell me about your current situation?',
+        'What challenges are you facing?',
+        'What would an ideal solution look like for you?',
+      ];
     }
 
     const duration = duration_minutes || 15;
-    const finalTone = tone || 'professional and friendly';
+    const finalTone = tone || 'friendly and professional';
 
     // ---------------------------------------------------------------------
     // Generate interview agent system prompt
     // ---------------------------------------------------------------------
+    const agentDisplayName = agent_name || 'Alex';
+
     const interviewPrompt = generateInterviewPrompt({
       name,
-      agentName: agent_name || 'Alex',
+      agentName: agentDisplayName,
       description,
       durationMinutes: duration,
       questions: questionsList,
@@ -90,9 +100,7 @@ export async function POST(request: NextRequest) {
     // ---------------------------------------------------------------------
     // Generate first message (friendly, asks for name)
     // ---------------------------------------------------------------------
-    const agentDisplayName = agent_name || 'Alex';
-    const firstMessage = greeting ||
-      `Hi! I'm ${agentDisplayName}, and I'll be chatting with you today about ${name}. Thanks so much for being here — could you start by telling me your name?`;
+    const firstMessage = `Hi! I'm ${agentDisplayName}, and I'll be chatting with you today about ${name}. Thanks so much for being here - could you start by telling me your name?`;
 
     // ---------------------------------------------------------------------
     // Create ElevenLabs interview agent
@@ -134,6 +142,7 @@ export async function POST(request: NextRequest) {
 
     if (!createAgentRes.ok) {
       const err = await createAgentRes.text();
+      console.error('ElevenLabs error:', err);
       throw new Error(`ElevenLabs agent creation failed: ${err}`);
     }
 
@@ -154,7 +163,7 @@ export async function POST(request: NextRequest) {
         name,
         slug,
         description: description || '',
-        interview_type,
+        interview_type: finalInterviewType,
         elevenlabs_agent_id: agent.agent_id,
         greeting: firstMessage,
         questions: questionsList,
@@ -171,7 +180,12 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error('Supabase error:', dbError);
+      throw dbError;
+    }
+
+    console.log('Panel created successfully:', panel.id);
 
     // ---------------------------------------------------------------------
     // Success
