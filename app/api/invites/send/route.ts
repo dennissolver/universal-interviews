@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         const magicLink = `${baseUrl}/i/${panelId}?token=${token}`;
 
         if (process.env.RESEND_API_KEY) {
-          await fetch('https://api.resend.com/emails', {
+          const emailResponse = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -37,7 +37,16 @@ export async function POST(request: NextRequest) {
               html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;"><h2>Hi ${person.name},</h2><p>You've been invited to participate in: <strong>${panel.name}</strong></p><a href="${magicLink}" style="display:inline-block;background:#8B5CF6;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin:16px 0;">Start Interview</a><p style="color:#666;font-size:14px;">Or copy: ${magicLink}</p></div>`
             })
           });
+
+          if (!emailResponse.ok) {
+            const errorData = await emailResponse.json();
+            console.error('Resend error:', errorData);
+            throw new Error(errorData.message || 'Email send failed');
+          }
+        } else {
+          console.warn('RESEND_API_KEY not configured - email not sent');
         }
+
         results.push({ email: person.email, success: true, link: magicLink });
       } catch (err: any) { results.push({ email: person.email, success: false, error: err.message }); }
     }
