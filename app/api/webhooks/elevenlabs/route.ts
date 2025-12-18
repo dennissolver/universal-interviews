@@ -1,143 +1,117 @@
+// app/api/webhooks/elevenlabs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { extractParticipantDetails } from '@/app/lib/interviews/extractParticipant';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-/**
- * ElevenLabs Webhook
- *
- * Responsibilities:
- * 1. Receive post_call_transcription events
- * 2. Locate the ACTIVE interview created at interview start
- * 3. Persist the FULL transcript JSON
- * 4. Extract + persist participant details
- * 5. Mark interview as completed
- * 6. Be idempotent
- */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const payload = await req.json();
+    const payload = await request.json();
+    console.log('ElevenLabs webhook received:', JSON.stringify(payload, null, 2));
 
-    // -------------------------------------------------------------
-    // Only handle transcript completion events
-    // -------------------------------------------------------------
-    if (payload.type !== 'post_call_transcription') {
-      return NextResponse.json({ status: 'ignored', reason: 'unsupported_event' });
+    // Handle different event types from ElevenLabs
+    const eventType = payload.type || payload.event_type || 'unknown';
+
+    // Extract conversation_id from various possible locations
+    const conversation_id = payload.conversation_id
+      || payload.data?.conversation_id
+      || payload.conversation?.conversation_id;
+
+    // If no conversation_id, just acknowledge the webhook
+    if (!conversation_id) {
+      console.log('Webhook received without conversation_id, event type:', eventType);
+      return NextResponse.json({ success: true, message: 'Event acknowledged', eventType });
     }
 
-    const agentId =
-      payload.agent_id ?? payload.data?.agent_id ?? null;
-
-    const conversationId =
-      payload.conversation_id ?? payload.data?.conversation_id ?? null;
-
-    const transcript =
-      payload.transcript ??
-      payload.data?.transcript ??
-      null;
-
-    if (!agentId || !Array.isArray(transcript) || transcript.length === 0) {
-      return NextResponse.json({
-        status: 'ignored',
-        reason: 'missing_agent_or_transcript',
-      });
-    }
-
-    // -------------------------------------------------------------
-    // 1️⃣ Find ACTIVE interview
-    // -------------------------------------------------------------
-    const { data: interview, error: interviewError } = await supabase
-      .from('interviews')
-      .select('id')
-      .eq('elevenlabs_agent_id', agentId)
-      .eq('status', 'active')
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (interviewError || !interview) {
-      console.error('No active interview found for agent:', agentId);
-      return NextResponse.json({
-        status: 'ignored',
-        reason: 'no_active_interview',
-      });
-    }
-
-    // -------------------------------------------------------------
-    // 2️⃣ Idempotency check
-    // -------------------------------------------------------------
-    const { data: existing } = await supabase
-      .from('interview_transcripts')
-      .select('id')
-      .eq('interview_id', interview.id)
-      .single();
-
-    if (existing) {
-      return NextResponse.json({
-        status: 'duplicate',
-        interviewId: interview.id,
-      });
-    }
-
-    // -------------------------------------------------------------
-    // 3️⃣ Extract participant details from transcript
-    // -------------------------------------------------------------
-    const participant = extractParticipantDetails(transcript);
-
-    // -------------------------------------------------------------
-    // 4️⃣ Persist transcript
-    // -------------------------------------------------------------
-    await supabase.from('interview_transcripts').insert({
-      interview_id: interview.id,
-      elevenlabs_conversation_id: conversationId,
-      elevenlabs_agent_id: agentId,
+    const {
+      agent_id: elevenlabs_agent_id,
+      status,
       transcript,
-      analysis: payload.analysis ?? payload.data?.analysis ?? null,
-      metadata: payload.metadata ?? payload.data?.metadata ?? null,
-      status: 'completed',
-      received_at: new Date().toISOString(),
-    });
+      analysis,
+      metadata,
+    } = payload.data || payload;
 
-    // -------------------------------------------------------------
-    // 5️⃣ Mark interview completed + persist participant fields
-    // -------------------------------------------------------------
-    await supabase
+    // Find the interview by elevenlabs_conversation_id
+    const { data: interview } = await supabase
       .from('interviews')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        participant_name: participant.name,
-        participant_company: participant.company,
-        participant_country: participant.country,
-        participant_investment_stage: participant.stage,
-        participant_sectors: participant.sectors,
-      })
-      .eq('id', interview.id);
+      .select('id, agent_id, interviewee_id')
+      .eq('elevenlabs_conversation_id', conversation_id)
+      .single();
+
+    // Format transcript text
+    let transcriptText = '';
+    if (Array.isArray(transcript)) {
+      transcriptText = transcript
+        .map((t: any) => `${t.role}: ${t.message}`)
+        .join('\n\n');
+    } else if (typeof transcript === 'string') {
+      transcriptText = transcript;
+    }
+
+    // Only store if we have transcript data
+    if (transcriptText || transcript) {
+      const { data: stored, error: storeError } = await supabase
+        .from('transcripts')
+        .upsert({
+          elevenlabs_conversation_id: conversation_id,
+          elevenlabs_agent_id,
+          interview_id: interview?.id || null,
+          agent_id: interview?.agent_id || null,
+          interviewee_id: interview?.interviewee_id || null,
+          transcript: transcriptText,
+          transcript_json: transcript,
+          analysis,
+          metadata,
+          status,
+          received_at: new Date().toISOString(),
+        }, {
+          onConflict: 'elevenlabs_conversation_id'
+        })
+        .select()
+        .single();
+
+      if (storeError) {
+        console.error('Failed to store transcript:', storeError);
+      }
+
+      // Update interview status if found
+      if (interview?.id) {
+        await supabase
+          .from('interviews')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            transcript: transcriptText,
+          })
+          .eq('id', interview.id);
+
+        if (interview.interviewee_id) {
+          await supabase
+            .from('interviewees')
+            .update({ status: 'completed' })
+            .eq('id', interview.interviewee_id);
+        }
+      }
+
+      console.log('Transcript stored:', { conversation_id, interviewId: interview?.id });
+    }
 
     return NextResponse.json({
       success: true,
-      interviewId: interview.id,
-      transcriptTurns: transcript.length,
+      eventType,
+      conversationId: conversation_id,
+      interviewId: interview?.id
     });
-  } catch (err: any) {
-    console.error('ElevenLabs webhook error:', err);
-    return NextResponse.json(
-      { error: err.message || 'Webhook processing failed' },
-      { status: 500 }
-    );
+
+  } catch (error) {
+    console.error('ElevenLabs webhook error:', error);
+    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 }
 
-/**
- * Health check
- */
 export async function GET() {
-  return NextResponse.json({
-    status: 'active',
-    endpoint: 'elevenlabs-webhook',
-  });
+  return NextResponse.json({ status: 'ElevenLabs webhook endpoint active' });
 }
