@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     // Find the interview by elevenlabs_conversation_id
     const { data: interview } = await supabase
       .from('interviews')
-      .select('id, agent_id, interviewee_id')
+      .select('id, panel_id, interviewee_id')
       .eq('elevenlabs_conversation_id', conversation_id)
       .single();
 
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
           elevenlabs_conversation_id: conversation_id,
           elevenlabs_agent_id,
           interview_id: interview?.id || null,
-          agent_id: interview?.agent_id || null,
+          panel_id: interview?.panel_id || null,
           interviewee_id: interview?.interviewee_id || null,
           transcript: transcriptText,
           transcript_json: transcript,
