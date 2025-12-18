@@ -1,5 +1,7 @@
+// app/api/tools/create-panel/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { generateInterviewPrompt } from '@/lib/prompts/interview-agent';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,6 +36,8 @@ export async function POST(request: NextRequest) {
       closing_message,
       target_audience,
       duration_minutes,
+      agent_name,
+      company_name,
     } = body;
 
     if (!name || !interview_type) {
@@ -68,44 +72,27 @@ export async function POST(request: NextRequest) {
     const finalTone = tone || 'professional and friendly';
 
     // ---------------------------------------------------------------------
-    // FINAL interview agent system prompt (panel-driven, domain-agnostic)
+    // Generate interview agent system prompt
     // ---------------------------------------------------------------------
-    const interviewPrompt = `
-You are an AI interviewer conducting a "${interview_type}" interview.
+    const interviewPrompt = generateInterviewPrompt({
+      name,
+      agentName: agent_name || 'Alex',
+      description,
+      durationMinutes: duration,
+      questions: questionsList,
+      tone: finalTone,
+      targetAudience: target_audience,
+      companyName: company_name,
+      greeting,
+      closingMessage: closing_message,
+    });
 
-INTERVIEW NAME
-"${name}"
-
-PURPOSE
-${description || 'Conducting an interview to gather insights.'}
-
-TARGET AUDIENCE
-${target_audience || 'Participants'}
-
-TONE
-${finalTone}
-
-DURATION
-Approximately ${duration} minutes.
-
-INTERVIEW RULES
-- Ask ONE question at a time
-- Wait for the participant to finish before continuing
-- Ask neutral follow-up questions only when clarification is needed
-- Do NOT assume background, expertise, or intent
-- Stay within the interview purpose
-- Do not give opinions or advice unless explicitly requested
-- Be respectful, calm, and conversational
-
-QUESTIONS TO COVER
-${questionsList.map((q, i) => `${i + 1}. ${q}`).join('\n')}
-
-OPENING MESSAGE
-"${greeting || 'Hello! Thank you for joining today. Let’s get started.'}"
-
-CLOSING MESSAGE
-"${closing_message || 'Thank you for your time and insights.'}"
-`.trim();
+    // ---------------------------------------------------------------------
+    // Generate first message (friendly, asks for name)
+    // ---------------------------------------------------------------------
+    const agentDisplayName = agent_name || 'Alex';
+    const firstMessage = greeting ||
+      `Hi! I'm ${agentDisplayName}, and I'll be chatting with you today about ${name}. Thanks so much for being here — could you start by telling me your name?`;
 
     // ---------------------------------------------------------------------
     // Create ElevenLabs interview agent
@@ -131,9 +118,7 @@ CLOSING MESSAGE
           conversation_config: {
             agent: {
               prompt: { prompt: interviewPrompt },
-              first_message:
-                greeting ||
-                'Hello! Thank you for joining today. Let’s begin.',
+              first_message: firstMessage,
               language: 'en',
             },
             asr: { provider: 'elevenlabs', quality: 'high' },
@@ -171,15 +156,16 @@ CLOSING MESSAGE
         description: description || '',
         interview_type,
         elevenlabs_agent_id: agent.agent_id,
-        greeting,
+        greeting: firstMessage,
         questions: questionsList,
         status: 'active',
         settings: {
           tone: finalTone,
           duration_minutes: duration,
           target_audience: target_audience || '',
-          closing_message:
-            closing_message || 'Thank you for your time and insights.',
+          closing_message: closing_message || 'Thank you for your time and insights.',
+          agent_name: agentDisplayName,
+          company_name: company_name || '',
         },
       })
       .select()
