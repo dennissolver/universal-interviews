@@ -124,22 +124,30 @@ async function beginInterview() {
       el.setAttribute('agent-id', panel.elevenlabs_agent_id);
 
       // 4️⃣ Listen for conversation start to capture conversation_id
-      el.addEventListener('elevenlabs-convai:conversation-started', async (event: any) => {
-        const conversationId = event.detail?.conversationId || event.detail?.conversation_id;
-        console.log('ElevenLabs conversation started:', conversationId);
+el.addEventListener('elevenlabs-convai:conversation-started', async (event: any) => {
+  console.log('=== ELEVENLABS EVENT FIRED ===');
+  console.log('Full event:', event);
+  console.log('Event detail:', event.detail);
 
-        if (conversationId && interviewId) {
-          // Save conversation_id to the interview record
-          await fetch('/api/interviews/link-conversation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              interviewId,
-              elevenlabsConversationId: conversationId,
-            }),
-          });
-        }
-      });
+  const conversationId = event.detail?.conversationId || event.detail?.conversation_id;
+  console.log('Extracted conversationId:', conversationId);
+  console.log('Interview ID:', interviewId);
+
+  if (conversationId && interviewId) {
+    console.log('Calling link-conversation API...');
+    const linkRes = await fetch('/api/interviews/link-conversation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewId,
+        elevenlabsConversationId: conversationId,
+      }),
+    });
+    console.log('Link response:', await linkRes.json());
+  } else {
+    console.log('Missing data - cannot link');
+  }
+});
 
       // 5️⃣ Listen for conversation end
       el.addEventListener('elevenlabs-convai:conversation-ended', () => {
