@@ -153,7 +153,7 @@ Closing message:
               voice_id: 'JBFqnCBsd6RMkjVDRZzb',
             },
             turn: {
-              mode: 'turn_based',
+              mode: 'turn',
               turn_timeout: 10,
             },
           },
