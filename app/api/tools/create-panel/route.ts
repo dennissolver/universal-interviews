@@ -1,4 +1,6 @@
 // app/api/tools/create-panel/route.ts
+// Updated to support voice_gender selection for interviewer agent
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { generateInterviewPrompt } from '@/lib/prompts/interview-agent';
@@ -7,6 +9,12 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// ElevenLabs voice IDs
+const VOICE_IDS = {
+  female: 'EXAVITQu4vr4xnSDxMaL', // Sarah - Warm & Professional
+  male: 'pNInz6obpgDQGcFmaJgB',   // Adam - Deep & Confident
+} as const;
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,6 +46,7 @@ export async function POST(request: NextRequest) {
       target_audience,
       duration_minutes,
       agent_name,
+      voice_gender,  // NEW: "male" or "female"
       company_name,
     } = body;
 
@@ -53,7 +62,7 @@ export async function POST(request: NextRequest) {
     const finalInterviewType = interview_type || 'customer research';
 
     // ---------------------------------------------------------------------
-    // Normalize questions
+    // Normalize questions - NO LIMIT on number of questions
     // ---------------------------------------------------------------------
     let questionsList: string[] = [];
 
@@ -80,10 +89,20 @@ export async function POST(request: NextRequest) {
     const finalTone = tone || 'friendly and professional';
 
     // ---------------------------------------------------------------------
-    // Generate interview agent system prompt
+    // Determine agent name and voice
     // ---------------------------------------------------------------------
     const agentDisplayName = agent_name || 'Alex';
 
+    // Select voice based on voice_gender parameter
+    // Default to female if not specified
+    const voiceGender = voice_gender?.toLowerCase() === 'male' ? 'male' : 'female';
+    const voiceId = VOICE_IDS[voiceGender];
+
+    console.log(`Interviewer config: name=${agentDisplayName}, voice=${voiceGender}, voiceId=${voiceId}`);
+
+    // ---------------------------------------------------------------------
+    // Generate interview agent system prompt
+    // ---------------------------------------------------------------------
     const interviewPrompt = generateInterviewPrompt({
       name,
       agentName: agentDisplayName,
@@ -103,7 +122,7 @@ export async function POST(request: NextRequest) {
     const firstMessage = `Hi! I'm ${agentDisplayName}, and I'll be chatting with you today about ${name}. Thanks so much for being here - could you start by telling me your name?`;
 
     // ---------------------------------------------------------------------
-    // Create ElevenLabs interview agent
+    // Create ElevenLabs interview agent with selected voice
     // ---------------------------------------------------------------------
     const elevenlabsApiKey = process.env.ELEVENLABS_API_KEY;
     if (!elevenlabsApiKey) {
@@ -122,16 +141,25 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name,
+          name: `${name} - ${agentDisplayName}`,
           conversation_config: {
             agent: {
               prompt: { prompt: interviewPrompt },
               first_message: firstMessage,
               language: 'en',
             },
-            asr: { provider: 'elevenlabs', quality: 'high' },
-            tts: { voice_id: 'JBFqnCBsd6RMkjVDRZzb' },
-            turn: { mode: 'turn', turn_timeout: 10 },
+            asr: {
+              provider: 'elevenlabs',
+              quality: 'high'
+            },
+            tts: {
+              voice_id: voiceId,
+              model_id: 'eleven_flash_v2',  // Fast, high quality
+            },
+            turn: {
+              mode: 'turn',
+              turn_timeout: 10
+            },
           },
           platform_settings: {
             auth: { enable_auth: false },
@@ -149,7 +177,7 @@ export async function POST(request: NextRequest) {
     const agent = await createAgentRes.json();
 
     // ---------------------------------------------------------------------
-    // Persist panel
+    // Persist panel with voice settings
     // ---------------------------------------------------------------------
     const slug = name
       .toLowerCase()
@@ -174,6 +202,7 @@ export async function POST(request: NextRequest) {
           target_audience: target_audience || '',
           closing_message: closing_message || 'Thank you for your time and insights.',
           agent_name: agentDisplayName,
+          voice_gender: voiceGender,  // Store for reference
           company_name: company_name || '',
         },
       })
@@ -185,7 +214,7 @@ export async function POST(request: NextRequest) {
       throw dbError;
     }
 
-    console.log('Panel created successfully:', panel.id);
+    console.log('Panel created successfully:', panel.id, `(${agentDisplayName}, ${voiceGender} voice)`);
 
     // ---------------------------------------------------------------------
     // Success
@@ -195,6 +224,10 @@ export async function POST(request: NextRequest) {
       panelId: panel.id,
       elevenlabsAgentId: agent.agent_id,
       interviewUrl: `/i/${panel.id}`,
+      interviewer: {
+        name: agentDisplayName,
+        voice: voiceGender,
+      },
     });
   } catch (error: any) {
     console.error('create-panel error:', error);
@@ -209,5 +242,6 @@ export async function GET() {
   return NextResponse.json({
     status: 'active',
     endpoint: 'create-panel',
+    supportedVoices: ['male', 'female'],
   });
 }
