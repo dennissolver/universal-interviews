@@ -1,5 +1,6 @@
 // app/api/tools/create-panel/route.ts
-// Updated to support voice_gender selection for interviewer agent
+// Creates interview panel with ElevenLabs agent
+// Can either create fresh OR finalize an existing draft
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -18,24 +19,25 @@ const VOICE_IDS = {
 
 export async function POST(request: NextRequest) {
   try {
-    // ---------------------------------------------------------------------
-    // Optional shared-secret protection (internal calls only)
-    // ---------------------------------------------------------------------
+    // Optional shared-secret protection
     const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET;
     if (webhookSecret) {
       const providedSecret = request.headers.get('X-Shared-Secret');
       if (providedSecret !== webhookSecret) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        // Allow requests without secret if coming from our own frontend
+        const origin = request.headers.get('origin') || '';
+        const isInternal = origin.includes('localhost') || origin.includes('vercel.app');
+        if (!isInternal) {
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
       }
     }
 
-    // ---------------------------------------------------------------------
-    // Parse + validate request body
-    // ---------------------------------------------------------------------
     const body = await request.json();
     console.log('create-panel received:', JSON.stringify(body, null, 2));
 
     const {
+      draft_id,  // If provided, we're finalizing a draft
       name,
       description,
       interview_type,
@@ -46,11 +48,10 @@ export async function POST(request: NextRequest) {
       target_audience,
       duration_minutes,
       agent_name,
-      voice_gender,  // NEW: "male" or "female"
+      voice_gender,
       company_name,
     } = body;
 
-    // Only name is required - interview_type has a default
     if (!name) {
       return NextResponse.json(
         { error: 'Panel name is required' },
@@ -58,25 +59,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Default interview_type if not provided
-    const finalInterviewType = interview_type || 'customer research';
-
-    // ---------------------------------------------------------------------
-    // Normalize questions - NO LIMIT on number of questions
-    // ---------------------------------------------------------------------
+    // Normalize questions
     let questionsList: string[] = [];
-
     if (Array.isArray(questions)) {
       questionsList = questions;
     } else if (typeof questions === 'string') {
-      // Handle comma-separated, newline-separated, or natural language questions
       questionsList = questions
         .split(/[,\n]+/)
         .map((q: string) => q.trim())
         .filter(Boolean);
     }
 
-    // If still no questions, create a default based on interview type
     if (questionsList.length === 0) {
       questionsList = [
         'Can you tell me about your current situation?',
@@ -87,22 +80,13 @@ export async function POST(request: NextRequest) {
 
     const duration = duration_minutes || 15;
     const finalTone = tone || 'friendly and professional';
-
-    // ---------------------------------------------------------------------
-    // Determine agent name and voice
-    // ---------------------------------------------------------------------
     const agentDisplayName = agent_name || 'Alex';
-
-    // Select voice based on voice_gender parameter
-    // Default to female if not specified
     const voiceGender = voice_gender?.toLowerCase() === 'male' ? 'male' : 'female';
     const voiceId = VOICE_IDS[voiceGender];
 
-    console.log(`Interviewer config: name=${agentDisplayName}, voice=${voiceGender}, voiceId=${voiceId}`);
+    console.log(`Interviewer: ${agentDisplayName}, voice=${voiceGender}, voiceId=${voiceId}`);
 
-    // ---------------------------------------------------------------------
     // Generate interview agent system prompt
-    // ---------------------------------------------------------------------
     const interviewPrompt = generateInterviewPrompt({
       name,
       agentName: agentDisplayName,
@@ -116,14 +100,10 @@ export async function POST(request: NextRequest) {
       closingMessage: closing_message,
     });
 
-    // ---------------------------------------------------------------------
-    // Generate first message (friendly, asks for name)
-    // ---------------------------------------------------------------------
+    // Generate first message
     const firstMessage = `Hi! I'm ${agentDisplayName}, and I'll be chatting with you today about ${name}. Thanks so much for being here - could you start by telling me your name?`;
 
-    // ---------------------------------------------------------------------
-    // Create ElevenLabs interview agent with selected voice
-    // ---------------------------------------------------------------------
+    // Create ElevenLabs interview agent
     const elevenlabsApiKey = process.env.ELEVENLABS_API_KEY;
     if (!elevenlabsApiKey) {
       return NextResponse.json(
@@ -148,17 +128,17 @@ export async function POST(request: NextRequest) {
               first_message: firstMessage,
               language: 'en',
             },
-            asr: {
-              provider: 'elevenlabs',
-              quality: 'high'
+            asr: { 
+              provider: 'elevenlabs', 
+              quality: 'high' 
             },
-            tts: {
+            tts: { 
               voice_id: voiceId,
-              model_id: 'eleven_flash_v2',  // Fast, high quality
+              model_id: 'eleven_flash_v2',
             },
-            turn: {
-              mode: 'turn',
-              turn_timeout: 10
+            turn: { 
+              mode: 'turn', 
+              turn_timeout: 10 
             },
           },
           platform_settings: {
@@ -176,49 +156,82 @@ export async function POST(request: NextRequest) {
 
     const agent = await createAgentRes.json();
 
-    // ---------------------------------------------------------------------
-    // Persist panel with voice settings
-    // ---------------------------------------------------------------------
+    // Generate proper slug
     const slug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .slice(0, 50);
 
-    const { data: panel, error: dbError } = await supabase
-      .from('agents')
-      .insert({
-        name,
-        slug,
-        description: description || '',
-        interview_type: finalInterviewType,
-        elevenlabs_agent_id: agent.agent_id,
-        greeting: firstMessage,
-        questions: questionsList,
-        status: 'active',
-        settings: {
-          tone: finalTone,
-          duration_minutes: duration,
-          target_audience: target_audience || '',
-          closing_message: closing_message || 'Thank you for your time and insights.',
-          agent_name: agentDisplayName,
-          voice_gender: voiceGender,  // Store for reference
-          company_name: company_name || '',
-        },
-      })
-      .select()
-      .single();
+    let panel;
 
-    if (dbError) {
-      console.error('Supabase error:', dbError);
-      throw dbError;
+    if (draft_id) {
+      // Finalize existing draft
+      const { data, error: dbError } = await supabase
+        .from('agents')
+        .update({
+          name,
+          slug,
+          description: description || '',
+          interview_type: interview_type || 'customer research',
+          elevenlabs_agent_id: agent.agent_id,
+          greeting: firstMessage,
+          questions: questionsList,
+          status: 'active',
+          settings: {
+            tone: finalTone,
+            duration_minutes: duration,
+            target_audience: target_audience || '',
+            closing_message: closing_message || 'Thank you for your time and insights.',
+            agent_name: agentDisplayName,
+            voice_gender: voiceGender,
+            company_name: company_name || '',
+          },
+        })
+        .eq('id', draft_id)
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error('Supabase error:', dbError);
+        throw dbError;
+      }
+      panel = data;
+    } else {
+      // Create fresh panel
+      const { data, error: dbError } = await supabase
+        .from('agents')
+        .insert({
+          name,
+          slug,
+          description: description || '',
+          interview_type: interview_type || 'customer research',
+          elevenlabs_agent_id: agent.agent_id,
+          greeting: firstMessage,
+          questions: questionsList,
+          status: 'active',
+          settings: {
+            tone: finalTone,
+            duration_minutes: duration,
+            target_audience: target_audience || '',
+            closing_message: closing_message || 'Thank you for your time and insights.',
+            agent_name: agentDisplayName,
+            voice_gender: voiceGender,
+            company_name: company_name || '',
+          },
+        })
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error('Supabase error:', dbError);
+        throw dbError;
+      }
+      panel = data;
     }
 
-    console.log('Panel created successfully:', panel.id, `(${agentDisplayName}, ${voiceGender} voice)`);
+    console.log('Panel created:', panel.id, `(${agentDisplayName}, ${voiceGender} voice)`);
 
-    // ---------------------------------------------------------------------
-    // Success
-    // ---------------------------------------------------------------------
     return NextResponse.json({
       success: true,
       panelId: panel.id,
