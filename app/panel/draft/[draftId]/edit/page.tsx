@@ -5,34 +5,19 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { 
-  Mic, 
-  User, 
-  MessageSquare, 
-  Clock, 
-  Plus, 
-  Trash2, 
+import {
+  Mic,
+  User,
+  MessageSquare,
+  Clock,
+  Plus,
+  Trash2,
   GripVertical,
   Check,
   Loader2,
-  Sparkles
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
-
-interface PanelDraft {
-  id: string;
-  name: string;
-  description: string;
-  questions: string[];
-  settings: {
-    tone: string;
-    duration_minutes: number;
-    target_audience: string;
-    closing_message: string;
-    agent_name: string;
-    voice_gender: 'male' | 'female';
-    company_name: string;
-  };
-}
 
 const VOICE_OPTIONS = [
   { value: 'female', label: 'Female', name: 'Sarah', desc: 'Warm & Professional' },
@@ -45,6 +30,7 @@ const TONE_OPTIONS = [
   { value: 'casual and friendly', label: 'Casual & Friendly' },
   { value: 'academic', label: 'Academic' },
   { value: 'empathetic', label: 'Empathetic' },
+  { value: 'warm and professional', label: 'Warm & Professional' },
 ];
 
 export default function EditDraftPage() {
@@ -56,6 +42,7 @@ export default function EditDraftPage() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Form state
   const [name, setName] = useState('');
@@ -75,20 +62,20 @@ export default function EditDraftPage() {
       try {
         const res = await fetch(`/api/panels/${draftId}`);
         if (!res.ok) throw new Error('Failed to load draft');
-        
-        const data = await res.json();
-        const draft: PanelDraft = data.panel;
 
-        setName(draft.name);
-        setDescription(draft.description || '');
-        setQuestions(draft.questions || []);
-        setAgentName(draft.settings?.agent_name || 'Alex');
-        setVoiceGender(draft.settings?.voice_gender || 'female');
-        setTone(draft.settings?.tone || 'friendly and professional');
-        setDuration(draft.settings?.duration_minutes || 15);
-        setTargetAudience(draft.settings?.target_audience || '');
-        setClosingMessage(draft.settings?.closing_message || '');
-        setCompanyName(draft.settings?.company_name || '');
+        const data = await res.json();
+
+        // API returns flat structure directly (not wrapped in "panel")
+        setName(data.name || '');
+        setDescription(data.description || '');
+        setQuestions(data.questions || []);
+        setAgentName(data.agent_name || 'Alex');
+        setVoiceGender(data.voice_gender || 'female');
+        setTone(data.tone || 'friendly and professional');
+        setDuration(data.duration_minutes || 15);
+        setTargetAudience(data.target_audience || '');
+        setClosingMessage(data.closing_message || '');
+        setCompanyName(data.company_name || '');
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -125,6 +112,9 @@ export default function EditDraftPage() {
   // Save draft (without creating ElevenLabs agent)
   const saveDraft = async () => {
     setSaving(true);
+    setError(null);
+    setSaveSuccess(false);
+
     try {
       const res = await fetch(`/api/panels/${draftId}`, {
         method: 'PATCH',
@@ -133,19 +123,20 @@ export default function EditDraftPage() {
           name,
           description,
           questions: questions.filter(q => q.trim()),
-          settings: {
-            tone,
-            duration_minutes: duration,
-            target_audience: targetAudience,
-            closing_message: closingMessage,
-            agent_name: agentName,
-            voice_gender: voiceGender,
-            company_name: companyName,
-          },
+          tone,
+          duration_minutes: duration,
+          target_audience: targetAudience,
+          closing_message: closingMessage,
+          agent_name: agentName,
+          voice_gender: voiceGender,
+          company_name: companyName,
         }),
       });
 
       if (!res.ok) throw new Error('Failed to save');
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -163,7 +154,7 @@ export default function EditDraftPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draft_id: draftId, // Signal to finalize this draft
+          draft_id: draftId,
           name,
           description,
           questions: questions.filter(q => q.trim()),
@@ -183,7 +174,7 @@ export default function EditDraftPage() {
       }
 
       const data = await res.json();
-      
+
       // Redirect to the new panel
       router.push(`/panel/${data.panelId}/invite`);
     } catch (err: any) {
@@ -195,7 +186,10 @@ export default function EditDraftPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto mb-4" />
+          <p className="text-slate-400">Loading your draft...</p>
+        </div>
       </div>
     );
   }
@@ -215,20 +209,36 @@ export default function EditDraftPage() {
           </p>
         </div>
 
+        {/* Error Banner */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 mb-6">
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
             <p className="text-red-400">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="ml-auto text-red-400 hover:text-red-300"
+            >
+              ✕
+            </button>
           </div>
         )}
 
-        <div className="space-y-8">
-          {/* Panel Name */}
+        {/* Success Banner */}
+        {saveSuccess && (
+          <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center gap-3">
+            <Check className="w-5 h-5 text-green-400" />
+            <p className="text-green-400">Draft saved successfully!</p>
+          </div>
+        )}
+
+        <div className="space-y-6">
+          {/* Panel Details */}
           <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-purple-400" />
               Panel Details
             </h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -239,7 +249,7 @@ export default function EditDraftPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
-                  placeholder="e.g., The First 5 Minutes of a Pitch"
+                  placeholder="e.g., Customer Discovery - Product Feedback"
                 />
               </div>
 
@@ -250,9 +260,9 @@ export default function EditDraftPage() {
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
+                  rows={3}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none resize-none"
-                  placeholder="What are you trying to learn?"
+                  placeholder="What insights are you hoping to gather?"
                 />
               </div>
 
@@ -260,11 +270,11 @@ export default function EditDraftPage() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Target Audience
                 </label>
-                <input
-                  type="text"
+                <textarea
                   value={targetAudience}
                   onChange={(e) => setTargetAudience(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
+                  rows={2}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none resize-none"
                   placeholder="e.g., VC Partners with 3+ years experience"
                 />
               </div>
@@ -391,7 +401,7 @@ export default function EditDraftPage() {
                       </svg>
                     </button>
                   </div>
-                  
+
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs text-slate-500">Q{index + 1}</span>
@@ -445,7 +455,7 @@ export default function EditDraftPage() {
             <button
               onClick={saveDraft}
               disabled={saving}
-              className="px-6 py-3 text-slate-300 hover:text-white transition disabled:opacity-50"
+              className="px-6 py-3 text-slate-300 hover:text-white transition disabled:opacity-50 border border-slate-700 rounded-lg hover:border-slate-600"
             >
               {saving ? (
                 <span className="flex items-center gap-2">
@@ -465,7 +475,7 @@ export default function EditDraftPage() {
               {creating ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Creating...
+                  Creating Panel...
                 </>
               ) : (
                 <>
