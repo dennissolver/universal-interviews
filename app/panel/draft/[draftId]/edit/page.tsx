@@ -150,11 +150,11 @@ export default function EditDraftPage() {
     setError(null);
 
     try {
-      const res = await fetch('/api/tools/create-panel', {
-        method: 'POST',
+      // First save any pending changes
+      await fetch(`/api/panels/${draftId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draft_id: draftId,
           name,
           description,
           questions: questions.filter(q => q.trim()),
@@ -166,6 +166,12 @@ export default function EditDraftPage() {
           closing_message: closingMessage,
           company_name: companyName,
         }),
+      });
+
+      // Then activate the panel (creates ElevenLabs agent)
+      const res = await fetch(`/api/panels/${draftId}/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!res.ok) {
