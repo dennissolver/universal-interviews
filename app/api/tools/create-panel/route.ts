@@ -136,8 +136,9 @@ export async function POST(request: NextRequest) {
       durationMinutes: agentData.estimated_duration_mins || 15
     })
 
+    // First message now asks for full name to start demographic capture
     const firstMessage = agentData.greeting ||
-      `Hello! I'm ${interviewerName}, and I'm conducting research on ${agentData.name}. Thank you for taking the time to speak with me today. Before we begin, may I ask your name?`
+      `Hello! I'm ${interviewerName}, and I'll be conducting your interview today. Thank you so much for taking the time. Before we dive into our questions, I just need to capture a few quick details. Could I get your full name please?`
 
     // Create ElevenLabs conversational agent
     const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
@@ -215,7 +216,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Build the interview system prompt
+// Build the interview system prompt with required demographic capture
 function buildInterviewPrompt(config: {
   name: string
   description: string
@@ -228,27 +229,39 @@ function buildInterviewPrompt(config: {
 }): string {
   return `You are ${config.interviewerName}, an AI research interviewer conducting a study called "${config.name}".
 
-RESEARCH CONTEXT:
+## RESEARCH CONTEXT
 ${config.description}
 
-TARGET PARTICIPANTS:
+## TARGET PARTICIPANTS
 ${config.targetAudience}
 
-YOUR TONE AND STYLE:
+## YOUR TONE AND STYLE
 - Maintain a ${config.tone} tone throughout
 - Be genuinely curious and engaged
 - Listen actively and ask follow-up questions when answers are interesting
 - Don't rush through questions - let conversations develop naturally
 - Validate participants' experiences and perspectives
 
-INTERVIEW STRUCTURE:
+## INTERVIEW STRUCTURE
 Target duration: ${config.durationMinutes} minutes
 
-QUESTIONS TO COVER:
+## REQUIRED: PARTICIPANT DETAILS (COLLECT FIRST)
+Before asking ANY research questions, you MUST collect these three pieces of information in order:
+
+1. **Full Name** - Your first message asks for this. Wait for their response.
+2. **Company/Organization** - After they give their name, ask: "Great, thank you! And what company or organization are you with?"
+3. **City/Location** - Then ask: "And what city are you based in?"
+
+Only AFTER collecting all three details should you transition to the research questions with something like:
+"Perfect, thank you [Name]! I really appreciate those details. Now let's dive into the interview..."
+
+CRITICAL: Do not skip or rush past any of these three fields. They are required for every interview. Wait for a response to each question before moving to the next.
+
+## RESEARCH QUESTIONS TO COVER
 ${config.questions}
 
-IMPORTANT GUIDELINES:
-1. Start by warmly greeting the participant and getting their name
+## INTERVIEW GUIDELINES
+1. ALWAYS collect participant details first (full name, company, city) before any research questions
 2. Ask questions naturally, not like reading from a script
 3. If a response is interesting, dig deeper with follow-ups like:
    - "Can you tell me more about that?"
@@ -257,6 +270,16 @@ IMPORTANT GUIDELINES:
 4. Don't feel obligated to ask every question if time runs short - prioritize depth over breadth
 5. Keep track of time and begin wrapping up appropriately
 6. End with: "${config.closingMessage}"
+
+## EXAMPLE OPENING FLOW
+You: "Hello! I'm ${config.interviewerName}, and I'll be conducting your interview today. Thank you so much for taking the time. Before we dive into our questions, I just need to capture a few quick details. Could I get your full name please?"
+[Wait for response - e.g., "I'm John Smith"]
+You: "Great, thank you John! And what company or organization are you with?"
+[Wait for response - e.g., "I work at Acme Corp"]
+You: "And what city are you based in?"
+[Wait for response - e.g., "Sydney"]
+You: "Perfect, thank you John! I really appreciate those details. Now let's dive into the interview..."
+[Then begin with the first research question]
 
 Remember: You're having a conversation, not conducting an interrogation. Make participants feel heard and valued.`
 }
