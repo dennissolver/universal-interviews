@@ -141,6 +141,8 @@ export async function POST(request: NextRequest) {
       `Hello! I'm ${interviewerName}, and I'll be conducting your interview today. Thank you so much for taking the time. Before we dive into our questions, I just need to capture a few quick details. Could I get your full name please?`
 
     // Create ElevenLabs conversational agent
+
+    // Create ElevenLabs conversational agent
     const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
       method: 'POST',
       headers: {
@@ -150,6 +152,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         name: `Interview: ${agentData.name}`,
         conversation_config: {
+          max_duration_seconds: 2000,  // 33+ minutes - prevents early cutoff
           agent: {
             prompt: {
               prompt: systemPrompt
