@@ -37,14 +37,14 @@ export async function POST(request: NextRequest) {
     console.log('Received data:', JSON.stringify(body, null, 2))
 
     const { draft_id } = body
-    let panelData: any
+    let agentData: any
 
     // If draft_id provided, we're finalizing an existing draft
     if (draft_id) {
       console.log('Finalizing draft:', draft_id)
 
       const { data: draft, error: fetchError } = await supabase
-        .from('panels')
+        .from('agents')
         .select('*')
         .eq('id', draft_id)
         .single()
@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
         }, { status: 404 })
       }
 
-      panelData = draft
+      agentData = draft
     } else {
-      // Direct creation (original behavior) - create panel data from body
+      // Direct creation (original behavior) - create agent data from body
       const {
         name,
         description,
@@ -83,23 +83,21 @@ export async function POST(request: NextRequest) {
           .filter((q: string) => q.length > 0)
       }
 
-      // Insert new panel
-      const { data: newPanel, error: insertError } = await supabase
-        .from('panels')
+      // Insert new agent with correct column names
+      const { data: newAgent, error: insertError } = await supabase
+        .from('agents')
         .insert({
           name: name || 'Untitled Panel',
           description: description || '',
           questions: questionsArray,
-          tone: tone || 'friendly and professional',
-          target_audience: target_audience || '',
-          duration_minutes: duration_minutes || 15,
+          interviewer_tone: tone || 'friendly and professional',
+          target_interviewees: target_audience || '',
+          estimated_duration_mins: duration_minutes || 15,
           agent_name: agent_name || 'Alex',
           voice_gender: voice_gender || 'female',
           closing_message: closing_message || 'Thank you for your time.',
           greeting: greeting || '',
           status: 'draft',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
         })
         .select()
         .single()
@@ -111,33 +109,35 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
-      panelData = newPanel
+      agentData = newAgent
     }
 
     // Now create the ElevenLabs agent
-    const voiceId = VOICE_IDS[panelData.voice_gender as keyof typeof VOICE_IDS] || VOICE_IDS.female
-    const interviewerName = panelData.agent_name || 'Alex'
+    const voiceGender = agentData.voice_gender || 'female'
+    const voiceId = VOICE_IDS[voiceGender as keyof typeof VOICE_IDS] || VOICE_IDS.female
+    const interviewerName = agentData.agent_name || 'Alex'
 
-    console.log(`Creating ElevenLabs agent: ${interviewerName}, voice=${panelData.voice_gender}, voiceId=${voiceId}`)
+    console.log(`Creating ElevenLabs agent: ${interviewerName}, voice=${voiceGender}, voiceId=${voiceId}`)
 
     // Build the system prompt for the interview agent
-    const questionsFormatted = Array.isArray(panelData.questions)
-      ? panelData.questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')
-      : panelData.questions
+    const questionsFormatted = Array.isArray(agentData.questions)
+      ? agentData.questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')
+      : agentData.questions
 
+    // Use correct database column names with fallbacks
     const systemPrompt = buildInterviewPrompt({
-      name: panelData.name,
-      description: panelData.description,
+      name: agentData.name,
+      description: agentData.description || '',
       interviewerName,
-      tone: panelData.tone,
-      targetAudience: panelData.target_audience,
+      tone: agentData.interviewer_tone || 'friendly and professional',
+      targetAudience: agentData.target_interviewees || '',
       questions: questionsFormatted,
-      closingMessage: panelData.closing_message,
-      durationMinutes: panelData.duration_minutes
+      closingMessage: agentData.closing_message || 'Thank you for your time.',
+      durationMinutes: agentData.estimated_duration_mins || 15
     })
 
-    const firstMessage = panelData.greeting ||
-      `Hello! I'm ${interviewerName}, and I'm conducting research on ${panelData.name}. Thank you for taking the time to speak with me today. Before we begin, may I ask your name?`
+    const firstMessage = agentData.greeting ||
+      `Hello! I'm ${interviewerName}, and I'm conducting research on ${agentData.name}. Thank you for taking the time to speak with me today. Before we begin, may I ask your name?`
 
     // Create ElevenLabs conversational agent
     const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        name: `Interview: ${panelData.name}`,
+        name: `Interview: ${agentData.name}`,
         conversation_config: {
           agent: {
             prompt: {
@@ -175,32 +175,32 @@ export async function POST(request: NextRequest) {
     const elevenLabsAgent = await elevenLabsResponse.json()
     console.log('ElevenLabs agent created:', elevenLabsAgent.agent_id)
 
-    // Update panel with ElevenLabs agent ID and set status to active
-    const { data: updatedPanel, error: updateError } = await supabase
-      .from('panels')
+    // Update agent with ElevenLabs agent ID and set status to active
+    const { data: updatedAgent, error: updateError } = await supabase
+      .from('agents')
       .update({
         elevenlabs_agent_id: elevenLabsAgent.agent_id,
+        voice_id: voiceId,
         status: 'active',
         updated_at: new Date().toISOString()
       })
-      .eq('id', panelData.id)
+      .eq('id', agentData.id)
       .select()
       .single()
 
     if (updateError) {
       console.error('Update error:', updateError)
-      // Agent was created but DB update failed - log for manual cleanup
       console.error('CLEANUP NEEDED: ElevenLabs agent created but DB update failed. Agent ID:', elevenLabsAgent.agent_id)
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://universal-interviews.vercel.app'
-    const interviewUrl = `/i/${panelData.id}`
+    const interviewUrl = `/i/${agentData.id}`
 
-    console.log('Panel created successfully:', panelData.id)
+    console.log('Panel created successfully:', agentData.id)
 
     return NextResponse.json({
       success: true,
-      panelId: panelData.id,
+      panelId: agentData.id,
       elevenlabsAgentId: elevenLabsAgent.agent_id,
       interviewUrl: interviewUrl,
       fullInterviewUrl: `${baseUrl}${interviewUrl}`

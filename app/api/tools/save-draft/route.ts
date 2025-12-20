@@ -66,25 +66,27 @@ export async function POST(request: NextRequest) {
       .from('agents')
       .insert({
         name,
-        slug: `draft-${slug}-${Date.now()}`, // Unique slug for draft
+        slug: `draft-${slug}-${Date.now()}`,
         description: description || '',
         interview_type: 'customer research',
-        elevenlabs_agent_id: null, // Not created yet
+        elevenlabs_agent_id: null,
         greeting: '',
         questions: questionsList,
-        status: 'draft', // Key: marks as draft
-        settings: {
-          tone: tone || 'friendly and professional',
-          duration_minutes: duration_minutes || 15,
-          target_audience: target_audience || '',
-          closing_message: closing_message || 'Thank you for your time and insights.',
-          agent_name: agent_name || 'Alex',
-          voice_gender: voice_gender || 'female',
-          company_name: company_name || '',
-        },
+        status: 'draft',
+        // Direct columns instead of settings:
+        interviewer_tone: tone || 'friendly and professional',
+        target_interviewees: target_audience || '',
+        estimated_duration_mins: duration_minutes || 15,
+        closing_message: closing_message || 'Thank you for your time and insights.',
+        agent_name: agent_name || 'Alex',
+        voice_gender: voice_gender || 'female',
+        company_name: company_name || '',
       })
       .select()
       .single();
+
+
+
 
     if (dbError) {
       console.error('Supabase error:', dbError);
