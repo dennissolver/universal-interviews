@@ -46,13 +46,10 @@ export async function GET(
       .select(`
         id,
         status,
-        interviewee_profile,
         started_at,
         completed_at,
         duration_seconds,
-        sentiment_overall,
         word_count,
-        messages,
         transcript,
         participant_name,
         participant_company,
