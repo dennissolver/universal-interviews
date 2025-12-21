@@ -21,6 +21,25 @@ export async function GET(
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Check if panelId is a UUID or slug
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(panelId);
+    
+    let actualPanelId = panelId;
+    
+    // If it's a slug, resolve to UUID first
+    if (!isUUID) {
+      const { data: agent, error: agentError } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('slug', panelId)
+        .single();
+      
+      if (agentError || !agent) {
+        return NextResponse.json({ interviews: [] });
+      }
+      actualPanelId = agent.id;
+    }
+
     // Fetch interviews for this agent, ordered by most recent first
     const { data: interviews, error } = await supabase
       .from('interviews')
@@ -39,7 +58,7 @@ export async function GET(
         participant_company,
         created_at
       `)
-      .eq('panel_id', panelId)
+      .eq('panel_id', actualPanelId)
       .order('created_at', { ascending: false });
 
     if (error) {
