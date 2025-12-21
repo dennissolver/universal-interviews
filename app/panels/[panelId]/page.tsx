@@ -27,6 +27,9 @@ interface Interview {
   sentiment_overall: string | null;
   word_count?: number;
   messages: any[];
+  transcript: string | null;
+  participant_name: string | null;
+  participant_company: string | null;
   created_at: string;
 }
 
@@ -215,7 +218,9 @@ export default function PanelDashboardPage() {
                       </span>
                       <div>
                         <div className="font-medium">
-                          {interview.interviewee_profile?.name ||
+                          {interview.participant_name ||
+                            interview.participant_company ||
+                            interview.interviewee_profile?.name ||
                             interview.interviewee_profile?.email ||
                             `Interview ${interview.id.slice(0, 8)}`}
                         </div>
@@ -301,23 +306,40 @@ export default function PanelDashboardPage() {
               {/* Transcript */}
               <div>
                 <h4 className="text-sm text-slate-400 mb-2">Transcript</h4>
-                <div className="bg-slate-800 rounded-lg p-4 space-y-3 max-h-64 overflow-y-auto">
-                  {(selectedInterview.messages || []).map((msg: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className={`${
-                        msg.role === 'assistant' || msg.role === 'agent'
-                          ? 'text-violet-300'
-                          : 'text-slate-300'
-                      }`}
-                    >
-                      <span className="font-medium text-xs uppercase text-slate-500 block mb-1">
-                        {msg.role === 'assistant' || msg.role === 'agent' ? 'AI' : 'Interviewee'}
-                      </span>
-                      <p>{msg.content || msg.message || msg.text}</p>
-                    </div>
-                  ))}
-                  {(!selectedInterview.messages || selectedInterview.messages.length === 0) && (
+                <div className="bg-slate-800 rounded-lg p-4 space-y-3 max-h-96 overflow-y-auto">
+                  {selectedInterview.transcript ? (
+                    selectedInterview.transcript.split('\n\n').map((block, idx) => {
+                      const isAgent = block.toLowerCase().startsWith('agent:');
+                      const text = block.replace(/^(agent|user):\s*/i, '');
+                      return (
+                        <div
+                          key={idx}
+                          className={isAgent ? 'text-violet-300' : 'text-slate-300'}
+                        >
+                          <span className="font-medium text-xs uppercase text-slate-500 block mb-1">
+                            {isAgent ? 'AI' : 'Interviewee'}
+                          </span>
+                          <p>{text}</p>
+                        </div>
+                      );
+                    })
+                  ) : (selectedInterview.messages || []).length > 0 ? (
+                    (selectedInterview.messages || []).map((msg: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`${
+                          msg.role === 'assistant' || msg.role === 'agent'
+                            ? 'text-violet-300'
+                            : 'text-slate-300'
+                        }`}
+                      >
+                        <span className="font-medium text-xs uppercase text-slate-500 block mb-1">
+                          {msg.role === 'assistant' || msg.role === 'agent' ? 'AI' : 'Interviewee'}
+                        </span>
+                        <p>{msg.content || msg.message || msg.text}</p>
+                      </div>
+                    ))
+                  ) : (
                     <span className="text-slate-500">No transcript available</span>
                   )}
                 </div>

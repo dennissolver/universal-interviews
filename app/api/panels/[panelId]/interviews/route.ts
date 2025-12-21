@@ -34,6 +34,9 @@ export async function GET(
         sentiment_overall,
         word_count,
         messages,
+        transcript,
+        participant_name,
+        participant_company,
         created_at
       `)
       .eq('panel_id', panelId)
