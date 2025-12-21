@@ -36,7 +36,7 @@ export async function GET(
         messages,
         created_at
       `)
-      .eq('agent_id', panelId)
+      .eq('panel_id', panelId)
       .order('created_at', { ascending: false });
 
     if (error) {
