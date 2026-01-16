@@ -11,7 +11,7 @@ export async function trackEvent(event: string, data: Record<string, any>) {
   }
 
   try {
-    await fetch(${DASHBOARD_URL}/api/track, {
+    await fetch(`${DASHBOARD_URL}/api/track`, {
       method: 'POST',
       headers: {
         'x-api-key': API_KEY,
