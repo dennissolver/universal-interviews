@@ -1,19 +1,27 @@
 // app/create/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Loader2, CheckCircle, MessageSquare } from 'lucide-react';
+import {
+  Sparkles,
+  Loader2,
+  CheckCircle,
+  MessageSquare,
+  FileEdit,
+  ArrowRight
+} from 'lucide-react';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 interface PlatformConfig {
   name: string;
   elevenlabs_agent_id: string;
 }
 
-interface DraftData {
+interface Draft {
   id: string;
   name: string;
-  description: string;
+  created_at: string;
 }
 
 export default function CreatePage() {
@@ -21,8 +29,23 @@ export default function CreatePage() {
   const [platform, setPlatform] = useState<PlatformConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<DraftData | null>(null);
   const [widgetLoaded, setWidgetLoaded] = useState(false);
+
+  // Draft detection state
+  const [draftReady, setDraftReady] = useState(false);
+  const [currentDraft, setCurrentDraft] = useState<Draft | null>(null);
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const supabaseRef = useRef<SupabaseClient | null>(null);
+
+  // Initialize Supabase client once
+  useEffect(() => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseAnonKey) {
+      supabaseRef.current = createClient(supabaseUrl, supabaseAnonKey);
+    }
+  }, []);
 
   // Fetch platform config on mount
   useEffect(() => {
@@ -58,32 +81,65 @@ export default function CreatePage() {
     document.body.appendChild(script);
   }, [platform?.elevenlabs_agent_id]);
 
-  // Poll for new drafts created by Sandra
+  // Set session start time when widget loads (user can start talking)
   useEffect(() => {
-    if (!widgetLoaded) return;
+    if (widgetLoaded && !sessionStartTime) {
+      setSessionStartTime(new Date());
+      console.log('[CreatePage] Session started, listening for drafts...');
+    }
+  }, [widgetLoaded, sessionStartTime]);
 
-    const pollForDraft = async () => {
-      try {
-        const res = await fetch('/api/panels/drafts/latest');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.draft && !draft) {
-            setDraft(data.draft);
+  // REAL-TIME SUBSCRIPTION: Listen for new drafts
+  useEffect(() => {
+    if (!widgetLoaded || !sessionStartTime || !supabaseRef.current) {
+      return;
+    }
+
+    const supabase = supabaseRef.current;
+
+    console.log('[CreatePage] Starting real-time subscription for drafts...');
+    console.log('[CreatePage] Session started at:', sessionStartTime.toISOString());
+
+    // Subscribe to INSERT events on panel_drafts table
+    const channel = supabase
+      .channel('draft-detection')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'panel_drafts'
+        },
+        (payload) => {
+          console.log('[CreatePage] Real-time: New draft detected!', payload);
+
+          const newDraft = payload.new as Draft;
+          const draftCreatedAt = new Date(newDraft.created_at);
+
+          // Verify this draft was created AFTER the session started
+          if (draftCreatedAt >= sessionStartTime) {
+            console.log('[CreatePage] ✅ Draft verified - created during this session:', newDraft.name);
+            setCurrentDraft(newDraft);
+            setDraftReady(true);
+          } else {
+            console.log('[CreatePage] ⚠️ Draft ignored - created before session started');
           }
         }
-      } catch (err) {
-        // Silently ignore polling errors
-      }
+      )
+      .subscribe((status) => {
+        console.log('[CreatePage] Subscription status:', status);
+      });
+
+    // Cleanup subscription on unmount
+    return () => {
+      console.log('[CreatePage] Cleaning up real-time subscription');
+      supabase.removeChannel(channel);
     };
+  }, [widgetLoaded, sessionStartTime]);
 
-    // Start polling after widget loads
-    const interval = setInterval(pollForDraft, 3000);
-    return () => clearInterval(interval);
-  }, [widgetLoaded, draft]);
-
-  const handleViewDraft = () => {
-    if (draft) {
-      router.push(`/panel/draft/${draft.id}`);
+  const goToReviewDraft = () => {
+    if (currentDraft) {
+      router.push(`/panel/draft/${currentDraft.id}/edit`);
     }
   };
 
@@ -128,29 +184,6 @@ export default function CreatePage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-6 py-12">
-        {/* Draft Created Banner */}
-        {draft && (
-          <div className="mb-8 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-6">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                <CheckCircle className="w-6 h-6 text-emerald-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-emerald-400 font-semibold text-lg">Draft Created!</h3>
-                <p className="text-white/70 mt-1">
-                  Sandra has created a draft panel: <span className="text-white font-medium">{draft.name}</span>
-                </p>
-                <button
-                  onClick={handleViewDraft}
-                  className="mt-4 px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-medium rounded-lg transition-colors"
-                >
-                  Review & Edit Draft
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Main Content */}
         <div className="bg-white/5 border border-white/10 rounded-3xl p-8">
           <div className="text-center mb-8">
@@ -165,6 +198,50 @@ export default function CreatePage() {
               Sandra is your AI assistant who will help you create a custom interview panel.
               Click the chat button in the bottom right to start talking!
             </p>
+          </div>
+
+          {/* REVIEW DRAFT BUTTON - Always visible, turns green when ready */}
+          <div className="mt-8 flex flex-col items-center">
+            <button
+              onClick={goToReviewDraft}
+              disabled={!draftReady}
+              className={`inline-flex items-center gap-3 px-8 py-4 rounded-2xl font-semibold text-lg transition-all duration-500 ${
+                draftReady
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/30 hover:shadow-2xl hover:shadow-emerald-500/40 hover:scale-105 cursor-pointer'
+                  : 'bg-white/10 text-white/40 cursor-not-allowed'
+              }`}
+            >
+              {draftReady ? (
+                <>
+                  <CheckCircle className="w-6 h-6" />
+                  Review Draft
+                  <ArrowRight className="w-6 h-6" />
+                </>
+              ) : (
+                <>
+                  <FileEdit className="w-6 h-6" />
+                  Review Draft
+                </>
+              )}
+            </button>
+
+            {/* Status indicator below button */}
+            {draftReady && currentDraft ? (
+              <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+                <div className="flex items-center justify-center gap-2 text-emerald-400">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="font-medium">"{currentDraft.name}"</span>
+                </div>
+                <p className="text-white/50 text-sm mt-2 text-center">
+                  Click the button above to review and finalize your panel
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 flex items-center justify-center gap-2 text-white/40">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Waiting for Sandra to create your draft...</span>
+              </div>
+            )}
           </div>
 
           {/* Instructions */}
