@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       duration_minutes,
       agent_name,
       voice_gender,
+      interview_context, // NEW: B2B or B2C
       closing_message,
       company_name,
     } = body;
@@ -61,6 +62,9 @@ export async function POST(request: NextRequest) {
       .replace(/^-|-$/g, '')
       .slice(0, 50);
 
+    // Validate interview_context
+    const validContext = interview_context === 'B2C' ? 'B2C' : 'B2B'; // Default to B2B
+
     // Save as draft (no ElevenLabs agent created yet)
     const { data: draft, error: dbError } = await supabase
       .from('agents')
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
         greeting: '',
         questions: questionsList,
         status: 'draft',
-        // Direct columns instead of settings:
+        // Direct columns:
         interviewer_tone: tone || 'friendly and professional',
         target_interviewees: target_audience || '',
         estimated_duration_mins: duration_minutes || 15,
@@ -81,19 +85,17 @@ export async function POST(request: NextRequest) {
         agent_name: agent_name || 'Alex',
         voice_gender: voice_gender || 'female',
         company_name: company_name || '',
+        interview_context: validContext, // NEW: B2B or B2C
       })
       .select()
       .single();
-
-
-
 
     if (dbError) {
       console.error('Supabase error:', dbError);
       throw dbError;
     }
 
-    console.log('Draft saved:', draft.id);
+    console.log('Draft saved:', draft.id, '| interview_context:', validContext);
 
     // Return the edit URL for Sandra to mention
     const editUrl = `/panel/draft/${draft.id}/edit`;
@@ -102,6 +104,7 @@ export async function POST(request: NextRequest) {
       success: true,
       draftId: draft.id,
       editUrl,
+      interviewContext: validContext,
       message: `Draft saved. User can review and edit at ${editUrl}`,
     });
   } catch (error: any) {
@@ -118,5 +121,10 @@ export async function GET() {
     status: 'active',
     endpoint: 'save-draft',
     description: 'Saves panel configuration as draft for user review before creation',
+    fields: {
+      required: ['name', 'questions'],
+      optional: ['description', 'tone', 'target_audience', 'duration_minutes', 'agent_name', 'voice_gender', 'interview_context', 'closing_message', 'company_name'],
+      interview_context: 'B2B (asks for company name) or B2C (no company question) - defaults to B2B'
+    }
   });
 }
