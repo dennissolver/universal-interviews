@@ -89,7 +89,7 @@ export default function CreatePage() {
     }
   }, [widgetLoaded, sessionStartTime]);
 
-  // REAL-TIME SUBSCRIPTION: Listen for new drafts
+  // REAL-TIME SUBSCRIPTION: Listen for new drafts in agents table
   useEffect(() => {
     if (!widgetLoaded || !sessionStartTime || !supabaseRef.current) {
       return;
@@ -100,7 +100,7 @@ export default function CreatePage() {
     console.log('[CreatePage] Starting real-time subscription for drafts...');
     console.log('[CreatePage] Session started at:', sessionStartTime.toISOString());
 
-    // Subscribe to INSERT events on panel_drafts table
+    // Subscribe to INSERT events on agents table where status = 'draft'
     const channel = supabase
       .channel('draft-detection')
       .on(
@@ -108,7 +108,8 @@ export default function CreatePage() {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'panel_drafts'
+          table: 'agents',
+          filter: 'status=eq.draft'
         },
         (payload) => {
           console.log('[CreatePage] Real-time: New draft detected!', payload);
