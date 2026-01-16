@@ -41,7 +41,7 @@ export default function SetupClient() {
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [pollCount, setPollCount] = useState(0);
 
-  const SETUP_AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_SETUP_AGENT_ID || '';
+  const SETUP_AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || '';
 
   // Load ElevenLabs widget script
   useEffect(() => {
