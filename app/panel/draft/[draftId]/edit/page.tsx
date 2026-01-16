@@ -1,151 +1,149 @@
 // app/panel/draft/[draftId]/edit/page.tsx
-// User reviews and edits panel configuration before final creation
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Mic,
-  User,
-  MessageSquare,
-  Clock,
-  Plus,
-  Trash2,
-  GripVertical,
-  Check,
-  Loader2,
-  Sparkles,
-  AlertCircle
+  Loader2, Save, Rocket, Plus, Trash2,
+  User, Clock, FileText,
+  ArrowLeft, CheckCircle, AlertCircle
 } from 'lucide-react';
 
-const VOICE_OPTIONS = [
-  { value: 'female', label: 'Female', name: 'Sarah', desc: 'Warm & Professional' },
-  { value: 'male', label: 'Male', name: 'Adam', desc: 'Deep & Confident' },
-];
+interface PanelData {
+  id: string;
+  name: string;
+  description: string;
+  questions: string[];
+  tone: string;
+  target_audience: string;
+  duration_minutes: number;
+  agent_name: string;
+  voice_gender: 'male' | 'female';
+  closing_message: string;
+  greeting: string;
+  status: string;
+}
 
 const TONE_OPTIONS = [
-  { value: 'friendly and professional', label: 'Friendly & Professional' },
-  { value: 'professional', label: 'Professional' },
-  { value: 'casual and friendly', label: 'Casual & Friendly' },
-  { value: 'academic', label: 'Academic' },
-  { value: 'empathetic', label: 'Empathetic' },
-  { value: 'warm and professional', label: 'Warm & Professional' },
+  'Warm and professional',
+  'Professional',
+  'Casual and friendly',
+  'Academic',
+  'Empathetic',
+  'Curious and engaged'
 ];
 
-export default function EditDraftPage() {
+const DURATION_OPTIONS = [5, 10, 15, 20, 30];
+
+export default function DraftEditPage() {
   const params = useParams();
   const router = useRouter();
   const draftId = params.draftId as string;
 
+  const [panel, setPanel] = useState<PanelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [newQuestion, setNewQuestion] = useState('');
 
-  // Form state
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [questions, setQuestions] = useState<string[]>([]);
-  const [agentName, setAgentName] = useState('');
-  const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
-  const [tone, setTone] = useState('friendly and professional');
-  const [duration, setDuration] = useState(15);
-  const [targetAudience, setTargetAudience] = useState('');
-  const [closingMessage, setClosingMessage] = useState('');
-  const [companyName, setCompanyName] = useState('');
-
-  // Load draft data
+  // Fetch panel data
   useEffect(() => {
-    async function loadDraft() {
+    async function fetchPanel() {
       try {
-        const res = await fetch(`/api/panels/${draftId}`);
-        if (!res.ok) throw new Error('Failed to load draft');
+        const response = await fetch(`/api/panels/${draftId}`);
+        if (!response.ok) throw new Error('Panel not found');
+        const data = await response.json();
 
-        const data = await res.json();
+        // Ensure questions is an array
+        let questions = data.questions || [];
+        if (typeof questions === 'string') {
+          questions = questions.split(/\d+\.\s+/).filter((q: string) => q.trim());
+        }
+        if (!Array.isArray(questions)) {
+          questions = [];
+        }
 
-        // API returns flat structure directly (not wrapped in "panel")
-        setName(data.name || '');
-        setDescription(data.description || '');
-        setQuestions(data.questions || []);
-        setAgentName(data.agent_name || 'Alex');
-        setVoiceGender(data.voice_gender || 'female');
-        setTone(data.tone || 'friendly and professional');
-        setDuration(data.duration_minutes || 15);
-        setTargetAudience(data.target_audience || '');
-        setClosingMessage(data.closing_message || '');
-        setCompanyName(data.company_name || '');
-      } catch (err: any) {
-        setError(err.message);
+        setPanel({
+          ...data,
+          questions,
+          voice_gender: data.voice_gender || 'female',
+          agent_name: data.agent_name || 'Alex',
+          tone: data.tone || 'Warm and professional',
+          duration_minutes: data.duration_minutes || 15,
+          closing_message: data.closing_message || 'Thank you so much for your time and insights today!',
+          greeting: data.greeting || ''
+        });
+      } catch (err) {
+        setError('Failed to load panel');
+        console.error(err);
       } finally {
         setLoading(false);
       }
     }
-
-    loadDraft();
+    fetchPanel();
   }, [draftId]);
 
-  // Question management
+  // Update a field
+  const updateField = (field: keyof PanelData, value: any) => {
+    if (!panel) return;
+    setPanel({ ...panel, [field]: value });
+    setSaveStatus('idle');
+  };
+
+  // Add question
   const addQuestion = () => {
-    setQuestions([...questions, '']);
+    if (!panel || !newQuestion.trim()) return;
+    setPanel({ ...panel, questions: [...panel.questions, newQuestion.trim()] });
+    setNewQuestion('');
+    setSaveStatus('idle');
   };
 
-  const updateQuestion = (index: number, value: string) => {
-    const updated = [...questions];
-    updated[index] = value;
-    setQuestions(updated);
-  };
-
+  // Remove question
   const removeQuestion = (index: number) => {
-    setQuestions(questions.filter((_, i) => i !== index));
+    if (!panel) return;
+    const updated = panel.questions.filter((_, i) => i !== index);
+    setPanel({ ...panel, questions: updated });
+    setSaveStatus('idle');
   };
 
-  const moveQuestion = (from: number, to: number) => {
-    if (to < 0 || to >= questions.length) return;
-    const updated = [...questions];
-    const [moved] = updated.splice(from, 1);
-    updated.splice(to, 0, moved);
-    setQuestions(updated);
+  // Update question
+  const updateQuestion = (index: number, value: string) => {
+    if (!panel) return;
+    const updated = [...panel.questions];
+    updated[index] = value;
+    setPanel({ ...panel, questions: updated });
+    setSaveStatus('idle');
   };
 
-  // Save draft (without creating ElevenLabs agent)
+  // Save draft
   const saveDraft = async () => {
+    if (!panel) return;
     setSaving(true);
-    setError(null);
-    setSaveSuccess(false);
+    setSaveStatus('saving');
 
     try {
-      const res = await fetch(`/api/panels/${draftId}`, {
+      const response = await fetch(`/api/panels/${draftId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          description,
-          questions: questions.filter(q => q.trim()),
-          tone,
-          duration_minutes: duration,
-          target_audience: targetAudience,
-          closing_message: closingMessage,
-          agent_name: agentName,
-          voice_gender: voiceGender,
-          company_name: companyName,
-        }),
+        body: JSON.stringify(panel)
       });
 
-      if (!res.ok) throw new Error('Failed to save');
-
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
-      setError(err.message);
+      if (!response.ok) throw new Error('Failed to save');
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (err) {
+      console.error(err);
+      setSaveStatus('error');
     } finally {
       setSaving(false);
     }
   };
 
-  // Create panel (creates ElevenLabs agent and activates)
+  // Create panel (publish)
   const createPanel = async () => {
+    if (!panel) return;
     setCreating(true);
     setError(null);
 
@@ -154,345 +152,368 @@ export default function EditDraftPage() {
       await fetch(`/api/panels/${draftId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          description,
-          questions: questions.filter(q => q.trim()),
-          tone,
-          target_audience: targetAudience,
-          duration_minutes: duration,
-          agent_name: agentName,
-          voice_gender: voiceGender,
-          closing_message: closingMessage,
-          company_name: companyName,
-        }),
+        body: JSON.stringify(panel)
       });
 
-      // Then activate the panel (creates ElevenLabs agent)
-      const res = await fetch(`/api/panels/${draftId}/activate`, {
+      // Then create the ElevenLabs agent
+      const response = await fetch('/api/tools/create-panel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-key': 'internal-create-panel'
+        },
+        body: JSON.stringify({ draft_id: draftId })
       });
 
-      if (!res.ok) {
-        const data = await res.json();
+      if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.error || 'Failed to create panel');
       }
 
-      const data = await res.json();
+      const data = await response.json();
 
-      // Redirect to the new panel
-      router.push(`/panel/${data.panelId}/invite`);
+      // Redirect to invite page
+      router.push(`/panel/${data.panelId || draftId}/invite`);
     } catch (err: any) {
-      setError(err.message);
+      console.error(err);
+      setError(err.message || 'Failed to create panel');
+    } finally {
       setCreating(false);
     }
   };
 
+  // Validation
+  const isValid = panel &&
+    panel.name?.trim() &&
+    panel.questions?.length >= 1 &&
+    panel.agent_name?.trim();
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-purple-500 animate-spin mx-auto mb-4" />
           <p className="text-slate-400">Loading your draft...</p>
         </div>
       </div>
     );
   }
 
+  if (error && !panel) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-400 mb-2">Error Loading Draft</h2>
+          <p className="text-slate-400 mb-6">{error}</p>
+          <button
+            onClick={() => router.push('/')}
+            className="bg-purple-600 hover:bg-purple-500 px-6 py-3 rounded-lg"
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!panel) return null;
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2 text-purple-400 text-sm mb-2">
-            <Sparkles className="w-4 h-4" />
-            <span>Review & Edit</span>
-          </div>
-          <h1 className="text-3xl font-bold">Your Interview Panel</h1>
-          <p className="text-slate-400 mt-2">
-            Review the details Sandra collected, make any changes, then create your panel.
-          </p>
-        </div>
-
-        {/* Error Banner */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-            <p className="text-red-400">{error}</p>
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <button
-              onClick={() => setError(null)}
-              className="ml-auto text-red-400 hover:text-red-300"
+              onClick={() => router.push('/')}
+              className="text-slate-400 hover:text-white transition"
             >
-              ✕
+              <ArrowLeft className="w-5 h-5" />
             </button>
+            <div>
+              <h1 className="font-semibold">Edit Draft</h1>
+              <p className="text-sm text-slate-400">Review and customize your panel</p>
+            </div>
           </div>
-        )}
-
-        {/* Success Banner */}
-        {saveSuccess && (
-          <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center gap-3">
-            <Check className="w-5 h-5 text-green-400" />
-            <p className="text-green-400">Draft saved successfully!</p>
-          </div>
-        )}
-
-        <div className="space-y-6">
-          {/* Panel Details */}
-          <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-purple-400" />
-              Panel Details
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Panel Name *
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
-                  placeholder="e.g., Customer Discovery - Product Feedback"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Research Objective
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none resize-none"
-                  placeholder="What insights are you hoping to gather?"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Target Audience
-                </label>
-                <textarea
-                  value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
-                  rows={2}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none resize-none"
-                  placeholder="e.g., VC Partners with 3+ years experience"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Interviewer Persona */}
-          <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <User className="w-5 h-5 text-purple-400" />
-              AI Interviewer
-            </h2>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Interviewer Name
-                </label>
-                <input
-                  type="text"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
-                  placeholder="e.g., Alex, Jordan, Dr. Smith"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-3">
-                  Voice
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  {VOICE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => setVoiceGender(option.value as 'male' | 'female')}
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        voiceGender === option.value
-                          ? 'border-purple-500 bg-purple-500/10'
-                          : 'border-slate-700 hover:border-slate-600'
-                      }`}
-                    >
-                      <div className="font-medium">{option.label}</div>
-                      <div className="text-sm text-slate-400">
-                        {option.name} - {option.desc}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6 mt-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Tone
-                </label>
-                <select
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
-                >
-                  {TONE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  <Clock className="w-4 h-4 inline mr-1" />
-                  Duration (minutes)
-                </label>
-                <input
-                  type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(parseInt(e.target.value) || 15)}
-                  min={5}
-                  max={60}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Questions */}
-          <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Mic className="w-5 h-5 text-purple-400" />
-                Interview Questions ({questions.length})
-              </h2>
-              <button
-                onClick={addQuestion}
-                className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Question
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {questions.map((question, index) => (
-                <div key={index} className="flex items-start gap-3 group">
-                  <div className="flex flex-col gap-1 pt-3">
-                    <button
-                      onClick={() => moveQuestion(index, index - 1)}
-                      disabled={index === 0}
-                      className="text-slate-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => moveQuestion(index, index + 1)}
-                      disabled={index === questions.length - 1}
-                      className="text-slate-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs text-slate-500">Q{index + 1}</span>
-                    </div>
-                    <textarea
-                      value={question}
-                      onChange={(e) => updateQuestion(index, e.target.value)}
-                      rows={2}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none resize-none"
-                      placeholder="Enter your question..."
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => removeQuestion(index)}
-                    className="mt-8 p-2 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-
-              {questions.length === 0 && (
-                <div className="text-center py-8 text-slate-500">
-                  <p>No questions yet.</p>
-                  <button
-                    onClick={addQuestion}
-                    className="mt-2 text-purple-400 hover:text-purple-300"
-                  >
-                    Add your first question
-                  </button>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Closing Message */}
-          <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Closing Message</h2>
-            <textarea
-              value={closingMessage}
-              onChange={(e) => setClosingMessage(e.target.value)}
-              rows={2}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none resize-none"
-              placeholder="Thank you message at end of interview..."
-            />
-          </section>
-
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-4">
+          <div className="flex items-center gap-3">
             <button
               onClick={saveDraft}
               disabled={saving}
-              className="px-6 py-3 text-slate-300 hover:text-white transition disabled:opacity-50 border border-slate-700 rounded-lg hover:border-slate-600"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition disabled:opacity-50"
             >
-              {saving ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving...
-                </span>
+              {saveStatus === 'saving' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : saveStatus === 'saved' ? (
+                <CheckCircle className="w-4 h-4 text-green-500" />
               ) : (
-                'Save Draft'
+                <Save className="w-4 h-4" />
               )}
+              {saveStatus === 'saved' ? 'Saved!' : 'Save Draft'}
             </button>
-
             <button
               onClick={createPanel}
-              disabled={creating || !name || questions.filter(q => q.trim()).length === 0}
-              className="flex items-center gap-2 px-8 py-3 bg-purple-600 hover:bg-purple-500 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!isValid || creating}
+              className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Creating Panel...
-                </>
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <>
-                  <Check className="w-5 h-5" />
-                  Create Panel
-                </>
+                <Rocket className="w-4 h-4" />
               )}
+              {creating ? 'Creating...' : 'Create Panel'}
             </button>
           </div>
         </div>
-      </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-red-400 font-medium">Error creating panel</p>
+              <p className="text-red-400/80 text-sm">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Panel Name & Description */}
+        <section className="bg-slate-900 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
+              <FileText className="w-5 h-5 text-purple-400" />
+            </div>
+            <h2 className="text-lg font-semibold">Panel Details</h2>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-2">Panel Name *</label>
+            <input
+              type="text"
+              value={panel.name}
+              onChange={(e) => updateField('name', e.target.value)}
+              placeholder="e.g., Customer Feedback Study"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-2">Description</label>
+            <textarea
+              value={panel.description || ''}
+              onChange={(e) => updateField('description', e.target.value)}
+              placeholder="Brief description of what this panel is for..."
+              rows={3}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-2">Target Audience</label>
+            <input
+              type="text"
+              value={panel.target_audience || ''}
+              onChange={(e) => updateField('target_audience', e.target.value)}
+              placeholder="e.g., Enterprise software buyers, Marketing managers"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+        </section>
+
+        {/* Interviewer Settings */}
+        <section className="bg-slate-900 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-pink-500/20 rounded-xl flex items-center justify-center">
+              <User className="w-5 h-5 text-pink-400" />
+            </div>
+            <h2 className="text-lg font-semibold">AI Interviewer</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">Interviewer Name *</label>
+              <input
+                type="text"
+                value={panel.agent_name}
+                onChange={(e) => updateField('agent_name', e.target.value)}
+                placeholder="e.g., Alex, Jordan, Dr. Smith"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">Voice</label>
+              <div className="flex bg-slate-800 rounded-xl p-1">
+                <button
+                  onClick={() => updateField('voice_gender', 'female')}
+                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
+                    panel.voice_gender === 'female'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Female (Sarah)
+                </button>
+                <button
+                  onClick={() => updateField('voice_gender', 'male')}
+                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
+                    panel.voice_gender === 'male'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Male (Adam)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">Tone</label>
+              <select
+                value={panel.tone}
+                onChange={(e) => updateField('tone', e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                {TONE_OPTIONS.map((tone) => (
+                  <option key={tone} value={tone}>{tone}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">Duration</label>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-500" />
+                <select
+                  value={panel.duration_minutes}
+                  onChange={(e) => updateField('duration_minutes', parseInt(e.target.value))}
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {DURATION_OPTIONS.map((mins) => (
+                    <option key={mins} value={mins}>{mins} minutes</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-2">Custom Greeting (optional)</label>
+            <input
+              type="text"
+              value={panel.greeting || ''}
+              onChange={(e) => updateField('greeting', e.target.value)}
+              placeholder="Leave blank for default greeting"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-2">Closing Message</label>
+            <input
+              type="text"
+              value={panel.closing_message || ''}
+              onChange={(e) => updateField('closing_message', e.target.value)}
+              placeholder="Thank you message at the end of interviews"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+        </section>
+
+        {/* Questions */}
+        <section className="bg-slate-900 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                <FileText className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Interview Questions</h2>
+                <p className="text-sm text-slate-400">{panel.questions.length} question{panel.questions.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Question List */}
+          <div className="space-y-3">
+            {panel.questions.map((question, index) => (
+              <div
+                key={index}
+                className="flex items-start gap-3 bg-slate-800/50 rounded-xl p-4 group"
+              >
+                <span className="text-purple-400 font-medium text-sm mt-1 w-6">{index + 1}.</span>
+                <textarea
+                  value={question}
+                  onChange={(e) => updateQuestion(index, e.target.value)}
+                  rows={2}
+                  className="flex-1 bg-transparent text-white resize-none focus:outline-none"
+                />
+                <button
+                  onClick={() => removeQuestion(index)}
+                  className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition p-1"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add Question */}
+          <div className="flex gap-3 pt-2">
+            <input
+              type="text"
+              value={newQuestion}
+              onChange={(e) => setNewQuestion(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && addQuestion()}
+              placeholder="Add a new question..."
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <button
+              onClick={addQuestion}
+              disabled={!newQuestion.trim()}
+              className="px-4 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+        </section>
+
+        {/* Bottom Actions */}
+        <div className="flex items-center justify-between pt-4 pb-8">
+          <button
+            onClick={() => router.push('/')}
+            className="text-slate-400 hover:text-white transition"
+          >
+            ← Back to Dashboard
+          </button>
+
+          <div className="flex items-center gap-3">
+            {!isValid && (
+              <p className="text-sm text-amber-400">
+                {!panel.name?.trim() && 'Panel name required. '}
+                {!panel.agent_name?.trim() && 'Interviewer name required. '}
+                {panel.questions?.length < 1 && 'Add at least one question.'}
+              </p>
+            )}
+            <button
+              onClick={createPanel}
+              disabled={!isValid || creating}
+              className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-semibold text-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25"
+            >
+              {creating ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Rocket className="w-5 h-5" />
+              )}
+              {creating ? 'Creating Panel...' : 'Create Panel'}
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

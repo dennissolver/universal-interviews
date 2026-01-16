@@ -1,54 +1,73 @@
 // app/api/panels/[panelId]/activate/route.ts
-// Activates a draft panel by creating the ElevenLabs agent and setting status to 'active'
-// Called from browser (draft edit page), NOT from ElevenLabs webhook
+// Called when client clicks "Create Panel" on the draft edit page
+// Creates the ElevenLabs interview agent and activates the panel
 
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+);
+
+const ELEVENLABS_API = 'https://api.elevenlabs.io/v1';
+
+// Voice IDs
+const VOICE_IDS = {
+  female: 'EXAVITQu4vr4xnSDxMaL', // Sarah
+  male: 'pNInz6obpgDQGcFmaJgB',   // Adam
+};
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { panelId: string } }
 ) {
-  const { panelId } = params
+  const panelId = params.panelId;
 
-  console.log('=== ACTIVATE PANEL ENDPOINT ===')
-  console.log('Panel ID:', panelId)
+  console.log(`[activate] Activating panel: ${panelId}`);
 
   try {
     // 1. Fetch the draft panel
-    const { data: draft, error: fetchError } = await supabase
+    const { data: panel, error: fetchError } = await supabase
       .from('agents')
       .select('*')
       .eq('id', panelId)
-      .single()
+      .single();
 
-    if (fetchError || !draft) {
-      console.error('Draft not found:', fetchError)
-      return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
+    if (fetchError || !panel) {
+      console.error('[activate] Panel not found:', fetchError);
+      return NextResponse.json({ error: 'Panel not found' }, { status: 404 });
     }
 
-    if (draft.status !== 'draft') {
-      return NextResponse.json({ error: 'Panel is already active' }, { status: 400 })
+    if (panel.status === 'active' && panel.elevenlabs_agent_id) {
+      console.log('[activate] Panel already active');
+      return NextResponse.json({
+        success: true,
+        panelId: panel.id,
+        message: 'Panel already active'
+      });
     }
 
-    // 2. Build the system prompt for ElevenLabs agent
-    const agentName = draft.agent_name || 'Alex'
-    const companyName = draft.company_name || ''
-    const tone = draft.interviewer_tone || 'friendly and professional'
-    const duration = draft.estimated_duration_mins || 15
-    const targetAudience = draft.target_interviewees || ''
-    const questions = draft.questions || []
-    const closingMessage = draft.closing_message || 'Thank you for your time and insights.'
+    // 2. Build the interview agent prompt
+    const agentName = panel.agent_name || 'Alex';
+    const tone = panel.tone || 'friendly and professional';
+    const duration = panel.duration_minutes || 15;
+    const targetAudience = panel.target_audience || 'participants';
+    const closingMessage = panel.closing_message || 'Thank you so much for your time and insights today!';
 
-    const systemPrompt = `You are ${agentName}${companyName ? ` from ${companyName}` : ''}, a ${tone} AI interviewer conducting research interviews.
+    // Format questions
+    const questions = Array.isArray(panel.questions)
+      ? panel.questions
+      : (panel.questions || '').split('\n').filter((q: string) => q.trim());
+
+    const questionsFormatted = questions
+      .map((q: string, i: number) => `${i + 1}. ${q}`)
+      .join('\n');
+
+    const prompt = `You are ${agentName}, a ${tone} AI interviewer conducting research interviews.
 
 ## Your Role
-You are conducting a research interview about: ${draft.description || draft.name}
+You are conducting a research interview about: ${panel.description || panel.name}
 
 ## Target Interviewees
 ${targetAudience}
@@ -59,108 +78,129 @@ ${targetAudience}
 - Ask follow-up questions to get deeper insights
 - Listen actively and acknowledge responses before moving on
 - Stay on topic but allow natural conversation flow
+- Be warm and make the participant feel comfortable
 
 ## Questions to Cover
-${questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
+${questionsFormatted}
+
+## Conversation Flow
+1. Start with a warm greeting and introduce yourself
+2. Briefly explain the purpose and expected duration
+3. Ask questions one at a time, with natural follow-ups
+4. Thank them and close warmly
 
 ## Closing
-When the interview is complete or time is up, thank them: "${closingMessage}"
+When all questions are covered or time is up, thank the participant:
+"${closingMessage}"
 
-Remember: You're gathering insights, not interrogating. Be curious and conversational.`
+## Important Rules
+- Ask ONE question at a time
+- Wait for complete responses before moving on
+- Use natural transitions between topics
+- If a response is brief, probe deeper with follow-up questions
+- Keep track of time and wrap up gracefully`;
 
-    const greeting = draft.greeting ||
-      `Hi! I'm ${agentName}${companyName ? ` from ${companyName}` : ''}. Thank you for taking the time to speak with me today. I'll be asking you some questions about ${draft.name?.toLowerCase() || 'your experiences'}. Feel free to share as much detail as you'd like. Shall we begin?`
+    // 3. Create ElevenLabs agent
+    const voiceId = VOICE_IDS[panel.voice_gender as keyof typeof VOICE_IDS] || VOICE_IDS.female;
 
-    // 3. Determine voice ID based on voice_gender
-    const voiceGender = draft.voice_gender || 'female'
-    // ElevenLabs voice IDs - you may need to update these with your actual voice IDs
-    const voiceId = voiceGender === 'male'
-      ? (process.env.ELEVENLABS_MALE_VOICE_ID || 'pNInz6obpgDQGcFmaJgB') // Adam
-      : (process.env.ELEVENLABS_FEMALE_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL') // Sarah
+    const platformName = process.env.NEXT_PUBLIC_PLATFORM_NAME || 'Interview Platform';
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || `https://${process.env.VERCEL_URL}`;
+    const webhookUrl = `${siteUrl}/api/webhooks/elevenlabs`;
 
-    // 4. Create ElevenLabs conversational agent
-    const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY
-    if (!elevenLabsApiKey) {
-      console.error('Missing ELEVENLABS_API_KEY')
-      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-    }
+    const agentConfig = {
+      name: `${platformName} - ${panel.name}`,
+      conversation_config: {
+        agent: {
+          prompt: {
+            prompt: prompt,
+          },
+          first_message: `Hi! I'm ${agentName}. Thank you for taking the time to speak with me today. This interview should take about ${duration} minutes. I'll be asking you some questions about ${panel.name.toLowerCase()}. Ready to get started?`,
+          language: 'en',
+        },
+        tts: {
+          voice_id: voiceId,
+          model_id: 'eleven_turbo_v2_5',
+        },
+        stt: {
+          provider: 'elevenlabs',
+        },
+        turn: {
+          mode: 'turn',
+        },
+        conversation: {
+          max_duration_seconds: (duration + 5) * 60, // Add 5 min buffer
+        },
+      },
+      platform_settings: {
+        auth: {
+          enable_auth: false,
+        },
+        webhook: {
+          url: webhookUrl,
+          events: ['conversation.ended'],
+        },
+      },
+    };
 
-    console.log('Creating ElevenLabs agent...')
+    console.log(`[activate] Creating ElevenLabs agent: ${agentConfig.name}`);
+    console.log(`[activate] Voice: ${panel.voice_gender} (${voiceId})`);
+    console.log(`[activate] Webhook URL: ${webhookUrl}`);
 
-    const agentResponse = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
+    const elevenLabsRes = await fetch(`${ELEVENLABS_API}/convai/agents/create`, {
       method: 'POST',
       headers: {
-        'xi-api-key': elevenLabsApiKey,
+        'xi-api-key': process.env.ELEVENLABS_API_KEY!,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: draft.name,
-        conversation_config: {
-          agent: {
-            prompt: {
-              prompt: systemPrompt,
-            },
-            first_message: greeting,
-            language: 'en',
-          },
-          tts: {
-            voice_id: voiceId,
-          },
-        },
-      }),
-    })
+      body: JSON.stringify(agentConfig),
+    });
 
-    if (!agentResponse.ok) {
-      const errorText = await agentResponse.text()
-      console.error('ElevenLabs API error:', errorText)
-      return NextResponse.json({
-        error: 'Failed to create voice agent',
-        details: errorText
-      }, { status: 500 })
+    if (!elevenLabsRes.ok) {
+      const errorText = await elevenLabsRes.text();
+      console.error('[activate] ElevenLabs error:', errorText);
+      return NextResponse.json(
+        { error: `Failed to create interview agent: ${errorText}` },
+        { status: 500 }
+      );
     }
 
-    const agentData = await agentResponse.json()
-    const elevenLabsAgentId = agentData.agent_id
+    const elevenLabsData = await elevenLabsRes.json();
+    const elevenLabsAgentId = elevenLabsData.agent_id;
 
-    console.log('ElevenLabs agent created:', elevenLabsAgentId)
+    console.log(`[activate] Created ElevenLabs agent: ${elevenLabsAgentId}`);
 
-    // 5. Update the panel with ElevenLabs agent ID and set status to active
-    const { data: updatedPanel, error: updateError } = await supabase
+    // 4. Update panel in database
+    const { error: updateError } = await supabase
       .from('agents')
       .update({
-        elevenlabs_agent_id: elevenLabsAgentId,
-        voice_id: voiceId,
-        greeting: greeting,
-        system_prompt: systemPrompt,
         status: 'active',
-        updated_at: new Date().toISOString(),
+        elevenlabs_agent_id: elevenLabsAgentId,
+        activated_at: new Date().toISOString(),
       })
-      .eq('id', panelId)
-      .select()
-      .single()
+      .eq('id', panelId);
 
     if (updateError) {
-      console.error('Database update error:', updateError)
-      return NextResponse.json({
-        error: 'Failed to activate panel',
-        details: updateError.message
-      }, { status: 500 })
+      console.error('[activate] Failed to update panel:', updateError);
+      return NextResponse.json(
+        { error: 'Failed to update panel status' },
+        { status: 500 }
+      );
     }
 
-    console.log('Panel activated successfully:', panelId)
+    console.log(`[activate] Panel ${panelId} activated successfully`);
 
     return NextResponse.json({
       success: true,
       panelId: panelId,
-      elevenlabsAgentId: elevenLabsAgentId,
-      message: 'Panel activated successfully'
-    })
+      elevenLabsAgentId: elevenLabsAgentId,
+      interviewUrl: `${siteUrl}/i/${panelId}`,
+    });
 
-  } catch (error) {
-    console.error('Activation error:', error)
-    return NextResponse.json({
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+  } catch (error: any) {
+    console.error('[activate] Error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
