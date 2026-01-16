@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Phone, PhoneOff, Loader2, CheckCircle, Plus,
-  ArrowRight, MessageSquare, Bot, Users, FileEdit, Sparkles
+  MessageSquare, Bot, Users, FileEdit, Sparkles
 } from 'lucide-react';
 import VoiceAvatar from './components/VoiceAvatar';
 import { clientConfig } from '@/config/client';
@@ -16,7 +16,6 @@ type SetupState =
   | 'dashboard'
   | 'ready_for_setup'
   | 'setup_in_progress'
-  | 'processing'
   | 'error';
 
 interface Panel {
@@ -27,19 +26,35 @@ interface Panel {
   created_at: string;
 }
 
+interface Draft {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
 export default function SetupClient() {
   const router = useRouter();
   const widgetContainerRef = useRef<HTMLDivElement>(null);
   const widgetMountedRef = useRef(false);
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
 
   const [state, setState] = useState<SetupState>('loading');
   const [panels, setPanels] = useState<Panel[]>([]);
   const [error, setError] = useState('');
   const [showWidget, setShowWidget] = useState(false);
   const [scriptLoaded, setScriptLoaded] = useState(false);
-  const [pollCount, setPollCount] = useState(0);
+
+  // Draft detection - real-time verified
+  const [draftReady, setDraftReady] = useState(false);
+  const [currentDraft, setCurrentDraft] = useState<Draft | null>(null);
+  const [callStartTime, setCallStartTime] = useState<Date | null>(null);
 
   const SETUP_AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || '';
+
+  // Initialize Supabase client once
+  useEffect(() => {
+    supabaseRef.current = createClient();
+  }, []);
 
   // Load ElevenLabs widget script
   useEffect(() => {
@@ -76,9 +91,58 @@ export default function SetupClient() {
     loadPanels();
   }, []);
 
+  // REAL-TIME SUBSCRIPTION: Listen for new drafts while call is in progress
+  useEffect(() => {
+    if (state !== 'setup_in_progress' || !callStartTime || !supabaseRef.current) {
+      return;
+    }
+
+    const supabase = supabaseRef.current;
+
+    console.log('[SetupClient] Starting real-time subscription for drafts...');
+    console.log('[SetupClient] Call started at:', callStartTime.toISOString());
+
+    // Subscribe to INSERT events on agents table where status = 'draft'
+    const channel = supabase
+      .channel('draft-detection')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'agents',
+          filter: 'status=eq.draft'
+        },
+        (payload) => {
+          console.log('[SetupClient] Real-time: New draft detected!', payload);
+
+          const newDraft = payload.new as Draft;
+          const draftCreatedAt = new Date(newDraft.created_at);
+
+          // Verify this draft was created AFTER the call started
+          if (draftCreatedAt >= callStartTime) {
+            console.log('[SetupClient] ✅ Draft verified - created during this session:', newDraft.name);
+            setCurrentDraft(newDraft);
+            setDraftReady(true);
+          } else {
+            console.log('[SetupClient] ⚠️ Draft ignored - created before call started');
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[SetupClient] Subscription status:', status);
+      });
+
+    // Cleanup subscription on unmount or state change
+    return () => {
+      console.log('[SetupClient] Cleaning up real-time subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [state, callStartTime]);
+
   async function loadPanels() {
     try {
-      const supabase = createClient();
+      const supabase = supabaseRef.current || createClient();
       const { data } = await supabase
         .from('agents')
         .select('id, name, description, status, created_at')
@@ -94,8 +158,11 @@ export default function SetupClient() {
   }
 
   const startSetupCall = async () => {
+    // Reset state for new call
     widgetMountedRef.current = false;
-    setPollCount(0);
+    setDraftReady(false);
+    setCurrentDraft(null);
+    setCallStartTime(new Date());
     setState('setup_in_progress');
     setShowWidget(true);
   };
@@ -105,47 +172,18 @@ export default function SetupClient() {
     widgetMountedRef.current = false;
     if (widgetContainerRef.current) widgetContainerRef.current.innerHTML = '';
 
-    // Immediately start looking for the draft
-    setState('processing');
-    setPollCount(0);
+    // If draft is ready, user can still click Review Draft
+    // If not, go back to ready state
+    if (!draftReady) {
+      setState('ready_for_setup');
+      setCallStartTime(null);
+    }
+  };
 
-    const pollForDraft = async (attempt: number) => {
-      if (attempt > 15) {
-        setError('Could not find your draft. Please try again or check your dashboard.');
-        setState('error');
-        return;
-      }
-
-      setPollCount(attempt);
-
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('agents')
-        .select('id, name, status, created_at')
-        .eq('status', 'draft')
-        .order('created_at', { ascending: false })
-        .limit(1) as { data: { id: string; name: string; status: string; created_at: string }[] | null };
-
-      if (data && data.length > 0) {
-        const draft = data[0];
-        const createdAt = new Date(draft.created_at);
-        const now = new Date();
-        const diffMs = now.getTime() - createdAt.getTime();
-        const diffMins = diffMs / 1000 / 60;
-
-        if (diffMins < 5) {
-          // Found the draft - redirect immediately!
-          router.push(`/panel/draft/${draft.id}/edit`);
-          return;
-        }
-      }
-
-      // Keep polling
-      setTimeout(() => pollForDraft(attempt + 1), 2000);
-    };
-
-    // Start polling after a short delay
-    setTimeout(() => pollForDraft(1), 1500);
+  const goToReviewDraft = () => {
+    if (currentDraft) {
+      router.push(`/panel/draft/${currentDraft.id}/edit`);
+    }
   };
 
   const WidgetContainer = () => (
@@ -241,33 +279,70 @@ export default function SetupClient() {
       case 'setup_in_progress':
         return (
           <div className="text-center max-w-lg mx-auto">
-            <VoiceAvatar isActive isSpeaking size="lg" label="Speaking..." />
+            <VoiceAvatar isActive isSpeaking size="lg" label="Speaking with Sandra..." />
             <h2 className="text-2xl font-bold text-green-400 mb-4">Call in Progress</h2>
-            <p className="text-slate-400 mb-6">Describe your interview panel. When Sandra confirms she's saved your draft, click End Call.</p>
-            <WidgetContainer />
-            <button onClick={endCall} className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 px-6 py-3 rounded-lg font-medium transition">
-              <PhoneOff className="w-5 h-5" />
-              End Call
-            </button>
-          </div>
-        );
+            <p className="text-slate-400 mb-6">
+              Describe your interview panel to Sandra. When she confirms your draft is saved,
+              the <span className="text-green-400 font-medium">Review Draft</span> button will turn green.
+            </p>
 
-      case 'processing':
-        return (
-          <div className="text-center max-w-lg mx-auto">
-            <VoiceAvatar isActive size="lg" label="Finding draft..." />
-            <h2 className="text-2xl font-bold mb-4">Taking You to Your Draft</h2>
-            <p className="text-slate-400 mb-8">Just a moment while we find your panel...</p>
-            <div className="space-y-3 text-left bg-slate-900 rounded-xl p-6">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                <span className="text-slate-300">Setup conversation complete</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
-                <span className="text-purple-400">Redirecting to your draft{pollCount > 0 ? ` (${pollCount}/15)` : ''}...</span>
-              </div>
+            <WidgetContainer />
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-center gap-4 mt-6">
+              {/* End Call Button */}
+              <button
+                onClick={endCall}
+                className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 px-6 py-3 rounded-lg font-medium transition"
+              >
+                <PhoneOff className="w-5 h-5" />
+                End Call
+              </button>
+
+              {/* Review Draft Button - changes based on draft status */}
+              <button
+                onClick={goToReviewDraft}
+                disabled={!draftReady}
+                className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all duration-300 ${
+                  draftReady
+                    ? 'bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-500/30 scale-105'
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {draftReady ? (
+                  <>
+                    <CheckCircle className="w-5 h-5" />
+                    Review Draft
+                  </>
+                ) : (
+                  <>
+                    <FileEdit className="w-5 h-5" />
+                    Review Draft
+                  </>
+                )}
+              </button>
             </div>
+
+            {/* Draft Ready Confirmation */}
+            {draftReady && currentDraft && (
+              <div className="mt-6 p-4 bg-green-500/10 border border-green-500/30 rounded-xl animate-fade-in">
+                <div className="flex items-center justify-center gap-2 text-green-400">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="font-medium">Draft Ready: "{currentDraft.name}"</span>
+                </div>
+                <p className="text-slate-400 text-sm mt-2">
+                  Click <span className="text-green-400">Review Draft</span> to review and finalize your panel
+                </p>
+              </div>
+            )}
+
+            {/* Waiting indicator */}
+            {!draftReady && (
+              <div className="mt-6 flex items-center justify-center gap-2 text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Listening for your draft...</span>
+              </div>
+            )}
           </div>
         );
 
