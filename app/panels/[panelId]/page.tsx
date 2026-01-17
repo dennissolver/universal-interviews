@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import KiraVoiceButton from '../../components/KiraVoiceButton';
 
 interface Agent {
   id: string;
@@ -32,8 +33,8 @@ interface Interview {
 
 interface PanelInsights {
   interview_count: number;
-  sentiment_breakdown: { positive: number; negative: number; neutral: number; mixed: number };
-  sentiment_percentages: { positive: number; negative: number; neutral: number; mixed: number };
+  sentiment_breakdown?: { positive: number; negative: number; neutral: number; mixed: number };
+  sentiment_percentages?: { positive: number; negative: number; neutral: number; mixed: number };
   average_sentiment_score: number | null;
   average_quality_score: number | null;
   top_topics: { topic: string; count: number; percentage: number }[];
@@ -74,20 +75,17 @@ export default function PanelDashboardPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        // Fetch agent details
         const agentRes = await fetch(`/api/agents/${panelId}`);
         if (!agentRes.ok) throw new Error('Panel not found');
         const agentData = await agentRes.json();
         setAgent(agentData.agent);
 
-        // Fetch interviews
         const interviewsRes = await fetch(`/api/panels/${agentData.agent.id}/interviews`);
         if (interviewsRes.ok) {
           const interviewsData = await interviewsRes.json();
           setInterviews(interviewsData.interviews || []);
         }
 
-        // Fetch insights
         const insightsRes = await fetch('/api/insights/summary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -97,7 +95,6 @@ export default function PanelDashboardPage() {
           const insightsData = await insightsRes.json();
           setInsights(insightsData);
         }
-
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load panel');
       } finally {
@@ -135,7 +132,6 @@ export default function PanelDashboardPage() {
   const openInterview = async (interview: Interview) => {
     setSelectedInterview(interview);
     
-    // Fetch evaluation if not cached
     if (!evaluations.has(interview.id)) {
       const res = await fetch(`/api/evaluations/run?interview_id=${interview.id}`);
       if (res.ok) {
@@ -168,9 +164,7 @@ export default function PanelDashboardPage() {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex flex-col items-center justify-center gap-4">
         <div className="text-red-400 text-lg">{error || 'Panel not found'}</div>
-        <Link href="/dashboard" className="text-violet-400 hover:underline">
-          ← Back to dashboard
-        </Link>
+        <Link href="/dashboard" className="text-violet-400 hover:underline">← Back to dashboard</Link>
       </div>
     );
   }
@@ -182,7 +176,6 @@ export default function PanelDashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100">
-      {/* Gradient Background */}
       <div className="fixed inset-0 bg-gradient-to-br from-violet-950/20 via-transparent to-fuchsia-950/20 pointer-events-none" />
       
       {/* Header */}
@@ -201,6 +194,7 @@ export default function PanelDashboardPage() {
               )}
             </div>
             <div className="flex items-center gap-3">
+              <KiraVoiceButton panelId={agent.id} panelName={agent.name} />
               <Link
                 href={`/panel/${agent.id}/invite`}
                 className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors"
@@ -244,9 +238,7 @@ export default function PanelDashboardPage() {
             <div className="text-sm text-zinc-500">Avg Duration</div>
           </div>
           <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-5">
-            <div className="text-3xl font-semibold text-violet-400">
-              {insights?.interview_count || 0}
-            </div>
+            <div className="text-3xl font-semibold text-violet-400">{insights?.interview_count || 0}</div>
             <div className="text-sm text-zinc-500">Analyzed</div>
           </div>
         </div>
@@ -258,9 +250,7 @@ export default function PanelDashboardPage() {
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab
-                  ? 'bg-zinc-800 text-zinc-100'
-                  : 'text-zinc-500 hover:text-zinc-300'
+                activeTab === tab ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -271,6 +261,13 @@ export default function PanelDashboardPage() {
         {/* Overview Tab */}
         {activeTab === 'overview' && insights?.sentiment_percentages && (
           <div className="grid md:grid-cols-2 gap-6">
+            {/* Overview Description */}
+            <div className="md:col-span-2 p-4 bg-zinc-900/30 border border-zinc-800/50 rounded-xl mb-2">
+              <p className="text-sm text-zinc-400">
+                AI-analyzed insights from your interviews. Sentiment, themes, pain points, and desires are automatically extracted from each conversation.
+              </p>
+            </div>
+
             {/* Sentiment */}
             <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="font-medium mb-4">Sentiment Distribution</h3>
@@ -285,11 +282,11 @@ export default function PanelDashboardPage() {
                           sentiment === 'negative' ? 'bg-red-500' :
                           sentiment === 'mixed' ? 'bg-amber-500' : 'bg-zinc-500'
                         }`}
-                        style={{ width: `${insights.sentiment_percentages[sentiment]}%` }}
+                        style={{ width: `${insights?.sentiment_percentages?.[sentiment] ?? 0}%` }}
                       />
                     </div>
                     <div className="w-12 text-sm text-zinc-500 text-right">
-                      {insights.sentiment_percentages[sentiment]}%
+                      {insights?.sentiment_percentages?.[sentiment] ?? 0}%
                     </div>
                   </div>
                 ))}
@@ -302,35 +299,32 @@ export default function PanelDashboardPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-zinc-800/50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-semibold text-emerald-400">
-                    {insights.average_sentiment_score?.toFixed(2) || '-'}
+                    {insights?.average_sentiment_score?.toFixed(2) || '-'}
                   </div>
                   <div className="text-sm text-zinc-500">Avg Sentiment (0-1)</div>
                 </div>
                 <div className="bg-zinc-800/50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-semibold text-violet-400">
-                    {insights.average_quality_score?.toFixed(1) || '-'}
+                    {insights?.average_quality_score?.toFixed(1) || '-'}
                   </div>
                   <div className="text-sm text-zinc-500">Avg Quality (1-10)</div>
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-between text-sm">
-                <span className="text-zinc-500">{insights.follow_up_candidates} follow-up candidates</span>
-                <span className="text-zinc-500">{insights.needs_review_count} need review</span>
+                <span className="text-zinc-500">{insights?.follow_up_candidates || 0} follow-up candidates</span>
+                <span className="text-zinc-500">{insights?.needs_review_count || 0} need review</span>
               </div>
             </div>
 
             {/* Top Topics */}
             <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="font-medium mb-4">Top Topics</h3>
-              {insights.top_topics.length === 0 ? (
+              {!insights?.top_topics?.length ? (
                 <p className="text-zinc-500 text-sm">No topics analyzed yet</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {insights.top_topics.map((t, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1.5 bg-violet-500/20 text-violet-300 rounded-lg text-sm"
-                    >
+                    <span key={i} className="px-3 py-1.5 bg-violet-500/20 text-violet-300 rounded-lg text-sm">
                       {t.topic} ({t.count})
                     </span>
                   ))}
@@ -341,7 +335,7 @@ export default function PanelDashboardPage() {
             {/* Pain Points */}
             <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="font-medium mb-4">Top Pain Points</h3>
-              {insights.top_pain_points.length === 0 ? (
+              {!insights?.top_pain_points?.length ? (
                 <p className="text-zinc-500 text-sm">No pain points identified yet</p>
               ) : (
                 <div className="space-y-3">
@@ -361,7 +355,7 @@ export default function PanelDashboardPage() {
             {/* Desires */}
             <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="font-medium mb-4">Top Desires</h3>
-              {insights.top_desires.length === 0 ? (
+              {!insights?.top_desires?.length ? (
                 <p className="text-zinc-500 text-sm">No desires identified yet</p>
               ) : (
                 <div className="space-y-3">
@@ -381,16 +375,14 @@ export default function PanelDashboardPage() {
             {/* Notable Quotes */}
             <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6">
               <h3 className="font-medium mb-4">Notable Quotes</h3>
-              {insights.notable_quotes.length === 0 ? (
+              {!insights?.notable_quotes?.length ? (
                 <p className="text-zinc-500 text-sm">No quotes extracted yet</p>
               ) : (
                 <div className="space-y-4">
                   {insights.notable_quotes.slice(0, 3).map((q, i) => (
                     <blockquote key={i} className="border-l-2 border-violet-500 pl-4">
                       <p className="text-sm italic text-zinc-300">"{q.quote}"</p>
-                      {q.theme && (
-                        <cite className="text-xs text-zinc-500 not-italic">— {q.theme}</cite>
-                      )}
+                      {q.theme && <cite className="text-xs text-zinc-500 not-italic">— {q.theme}</cite>}
                     </blockquote>
                   ))}
                 </div>
@@ -400,7 +392,7 @@ export default function PanelDashboardPage() {
         )}
 
         {/* No insights message */}
-        {activeTab === 'overview' && !insights?.interview_count && (
+        {activeTab === 'overview' && !insights?.sentiment_percentages && (
           <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-2xl p-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-amber-500/20 flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -409,7 +401,7 @@ export default function PanelDashboardPage() {
             </div>
             <h3 className="text-lg font-medium mb-2">No insights yet</h3>
             <p className="text-zinc-500 mb-6 max-w-md mx-auto">
-              Complete some interviews and run the evaluation to see insights here
+              Complete some interviews and run the evaluation to see insights here. The AI analyzes each transcript to extract sentiment, topics, pain points, desires, and memorable quotes.
             </p>
             <Link
               href="/dashboard"
@@ -484,9 +476,7 @@ export default function PanelDashboardPage() {
                     <p className="text-lg italic text-zinc-200">"{q.quote}"</p>
                     <div className="mt-2 flex items-center gap-4">
                       {q.theme && (
-                        <span className="px-2 py-1 bg-violet-500/20 text-violet-300 rounded text-xs">
-                          {q.theme}
-                        </span>
+                        <span className="px-2 py-1 bg-violet-500/20 text-violet-300 rounded text-xs">{q.theme}</span>
                       )}
                       {q.context && (
                         <span className="text-sm text-zinc-500">{q.context}</span>
@@ -537,17 +527,13 @@ export default function PanelDashboardPage() {
                     <span className={`text-sm font-medium ${getSentimentColor(selectedEvaluation.sentiment)}`}>
                       {selectedEvaluation.sentiment}
                     </span>
-                    <span className="text-sm text-zinc-500">
-                      Quality: {selectedEvaluation.quality_score}/10
-                    </span>
+                    <span className="text-sm text-zinc-500">Quality: {selectedEvaluation.quality_score}/10</span>
                   </div>
                   <p className="text-sm text-zinc-300">{selectedEvaluation.summary}</p>
                   {selectedEvaluation.topics && selectedEvaluation.topics.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {selectedEvaluation.topics.map((t, i) => (
-                        <span key={i} className="px-2 py-1 bg-violet-500/20 text-violet-300 rounded text-xs">
-                          {t}
-                        </span>
+                        <span key={i} className="px-2 py-1 bg-violet-500/20 text-violet-300 rounded text-xs">{t}</span>
                       ))}
                     </div>
                   )}
