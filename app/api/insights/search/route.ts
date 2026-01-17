@@ -80,7 +80,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Text search scoring (simple keyword matching)
     const queryLower = query.toLowerCase();
-    const keywords = queryLower.split(/\s+/).filter(k => k.length > 2);
+    const keywords = queryLower.split(/\s+/).filter((k: string) => k.length > 2);
 
     const scored = results.map((eval_: any) => {
       let score = 0;
