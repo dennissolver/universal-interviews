@@ -49,7 +49,7 @@ export default function SetupClient() {
   const [currentDraft, setCurrentDraft] = useState<Draft | null>(null);
   const [callStartTime, setCallStartTime] = useState<Date | null>(null);
 
-  const SETUP_AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID || '';
+  const SETUP_AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_SETUP_AGENT_ID || '';
 
   // Initialize Supabase client once
   useEffect(() => {
