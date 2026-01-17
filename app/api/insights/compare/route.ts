@@ -156,7 +156,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       }
       
-      const commonTopics = [...allTopics].filter(topic => 
+      const commonTopics = Array.from(allTopics).filter(topic =>
         panelComparisons.every(p => p.top_topics.some((t: any) => t.topic === topic))
       );
 
