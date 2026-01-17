@@ -269,7 +269,7 @@ export default function PanelDashboardPage() {
         </div>
 
         {/* Overview Tab */}
-        {activeTab === 'overview' && insights && (
+        {activeTab === 'overview' && insights?.sentiment_percentages && (
           <div className="grid md:grid-cols-2 gap-6">
             {/* Sentiment */}
             <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6">
