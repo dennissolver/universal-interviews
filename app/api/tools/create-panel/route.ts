@@ -37,14 +37,15 @@ export async function POST(request: NextRequest) {
     console.log('Received data:', JSON.stringify(body, null, 2))
 
     const { draft_id } = body
-    let agentData: any
+    let draftData: any
 
     // If draft_id provided, we're finalizing an existing draft
     if (draft_id) {
       console.log('Finalizing draft:', draft_id)
 
+      // ✅ FIXED: Query panel_drafts table, not agents
       const { data: draft, error: fetchError } = await supabase
-        .from('agents')
+        .from('panel_drafts')
         .select('*')
         .eq('id', draft_id)
         .single()
@@ -56,91 +57,47 @@ export async function POST(request: NextRequest) {
         }, { status: 404 })
       }
 
-      agentData = draft
+      console.log('Draft found:', draft.name)
+      draftData = draft
     } else {
-      // Direct creation (original behavior) - create agent data from body
-      const {
-        name,
-        description,
-        questions,
-        tone,
-        target_audience,
-        duration_minutes,
-        agent_name,
-        voice_gender,
-        closing_message,
-        greeting
-      } = body
-
-      // Normalize questions
-      let questionsArray: string[] = []
-      if (Array.isArray(questions)) {
-        questionsArray = questions
-      } else if (typeof questions === 'string') {
-        questionsArray = questions
-          .split(/\d+\.\s+/)
-          .map((q: string) => q.trim())
-          .filter((q: string) => q.length > 0)
-      }
-
-      // Insert new agent with correct column names
-      const { data: newAgent, error: insertError } = await supabase
-        .from('agents')
-        .insert({
-          name: name || 'Untitled Panel',
-          description: description || '',
-          questions: questionsArray,
-          interviewer_tone: tone || 'friendly and professional',
-          target_interviewees: target_audience || '',
-          estimated_duration_mins: duration_minutes || 15,
-          agent_name: agent_name || 'Alex',
-          voice_gender: voice_gender || 'female',
-          closing_message: closing_message || 'Thank you for your time.',
-          greeting: greeting || '',
-          status: 'draft',
-        })
-        .select()
-        .single()
-
-      if (insertError) {
-        console.error('Insert error:', insertError)
-        return NextResponse.json({
-          error: 'Failed to create panel'
-        }, { status: 500 })
-      }
-
-      agentData = newAgent
+      // Direct creation (original behavior) - use body as draft data
+      draftData = body
     }
 
-    // Now create the ElevenLabs agent
-    const voiceGender = agentData.voice_gender || 'female'
+    // Normalize questions
+    let questionsArray: string[] = []
+    if (Array.isArray(draftData.questions)) {
+      questionsArray = draftData.questions
+    } else if (typeof draftData.questions === 'string') {
+      questionsArray = draftData.questions
+        .split(/\d+\.\s+/)
+        .map((q: string) => q.trim())
+        .filter((q: string) => q.length > 0)
+    }
+
+    // Determine voice settings
+    const voiceGender = draftData.voice_gender || 'female'
     const voiceId = VOICE_IDS[voiceGender as keyof typeof VOICE_IDS] || VOICE_IDS.female
-    const interviewerName = agentData.agent_name || 'Alex'
+    const interviewerName = draftData.agent_name || 'Alex'
 
     console.log(`Creating ElevenLabs agent: ${interviewerName}, voice=${voiceGender}, voiceId=${voiceId}`)
 
     // Build the system prompt for the interview agent
-    const questionsFormatted = Array.isArray(agentData.questions)
-      ? agentData.questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')
-      : agentData.questions
+    const questionsFormatted = questionsArray.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')
 
-    // Use correct database column names with fallbacks
     const systemPrompt = buildInterviewPrompt({
-      name: agentData.name,
-      description: agentData.description || '',
+      name: draftData.name || 'Untitled Panel',
+      description: draftData.description || '',
       interviewerName,
-      tone: agentData.interviewer_tone || 'friendly and professional',
-      targetAudience: agentData.target_interviewees || '',
+      tone: draftData.tone || 'friendly and professional',
+      targetAudience: draftData.target_audience || '',
       questions: questionsFormatted,
-      closingMessage: agentData.closing_message || 'Thank you for your time.',
-      durationMinutes: agentData.estimated_duration_mins || 15
+      closingMessage: draftData.closing_message || 'Thank you for your time.',
+      durationMinutes: draftData.duration_minutes || 15
     })
 
-    // First message now asks for full name to start demographic capture
-    const firstMessage = agentData.greeting ||
+    const firstMessage = draftData.greeting ||
       `Hello! I'm ${interviewerName}, and I'll be conducting your interview today. Thank you so much for taking the time. Before we dive into our questions, I just need to capture a few quick details. Could I get your full name please?`
-
-    // Create ElevenLabs conversational agent
 
     // Create ElevenLabs conversational agent
     const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
@@ -150,9 +107,9 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        name: `Interview: ${agentData.name}`,
+        name: `Interview: ${draftData.name}`,
         conversation_config: {
-          max_duration_seconds: 2000,  // 33+ minutes - prevents early cutoff
+          max_duration_seconds: 2000,
           agent: {
             prompt: {
               prompt: systemPrompt
@@ -179,32 +136,69 @@ export async function POST(request: NextRequest) {
     const elevenLabsAgent = await elevenLabsResponse.json()
     console.log('ElevenLabs agent created:', elevenLabsAgent.agent_id)
 
-    // Update agent with ElevenLabs agent ID and set status to active
-    const { data: updatedAgent, error: updateError } = await supabase
+    // Generate slug from name
+    const slug = (draftData.name || 'panel')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50)
+
+    // ✅ Insert NEW row into agents table (mapping panel_drafts columns to agents columns)
+    const { data: newAgent, error: insertError } = await supabase
       .from('agents')
-      .update({
+      .insert({
+        name: draftData.name || 'Untitled Panel',
+        slug: slug,
+        description: draftData.description || '',
+        target_audience: draftData.target_audience || '',
+        interviewer_tone: draftData.tone || 'friendly and professional',
+        estimated_duration_mins: draftData.duration_minutes || 15,
+        questions: questionsArray,
+        greeting: firstMessage,
         elevenlabs_agent_id: elevenLabsAgent.agent_id,
         voice_id: voiceId,
         status: 'active',
-        updated_at: new Date().toISOString()
+        total_interviews: 0,
+        completed_interviews: 0
       })
-      .eq('id', agentData.id)
       .select()
       .single()
 
-    if (updateError) {
-      console.error('Update error:', updateError)
-      console.error('CLEANUP NEEDED: ElevenLabs agent created but DB update failed. Agent ID:', elevenLabsAgent.agent_id)
+    if (insertError) {
+      console.error('Insert error:', insertError)
+      console.error('CLEANUP NEEDED: ElevenLabs agent created but DB insert failed. Agent ID:', elevenLabsAgent.agent_id)
+      return NextResponse.json({
+        error: 'Failed to save panel to database',
+        details: insertError.message
+      }, { status: 500 })
+    }
+
+    console.log('Agent created in database:', newAgent.id)
+
+    // ✅ Mark draft as finalized
+    if (draft_id) {
+      const { error: updateDraftError } = await supabase
+        .from('panel_drafts')
+        .update({ 
+          status: 'finalized',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', draft_id)
+
+      if (updateDraftError) {
+        console.warn('Failed to update draft status:', updateDraftError)
+        // Non-fatal - panel was created successfully
+      }
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://universal-interviews.vercel.app'
-    const interviewUrl = `/i/${agentData.id}`
+    const interviewUrl = `/i/${newAgent.id}`
 
-    console.log('Panel created successfully:', agentData.id)
+    console.log('Panel created successfully:', newAgent.id)
 
     return NextResponse.json({
       success: true,
-      panelId: agentData.id,
+      panelId: newAgent.id,
       elevenlabsAgentId: elevenLabsAgent.agent_id,
       interviewUrl: interviewUrl,
       fullInterviewUrl: `${baseUrl}${interviewUrl}`
