@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     const { data: agents, error } = await supabase
       .from('agents')
-      .select('id, slug, name, description, status, total_interviews, completed_interviews, created_at, primary_color')
+      .select('id, slug, name, description, status, total_interviews, completed_interviews, created_at')
       .order('created_at', { ascending: false });
 
     if (error) {
