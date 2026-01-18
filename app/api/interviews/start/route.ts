@@ -1,3 +1,4 @@
+// app/api/interviews/start/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -7,21 +8,37 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  const { panelId, elevenlabsAgentId, intervieweeId } = await req.json();
+  const { panelId } = await req.json();
 
-  if (!panelId || !elevenlabsAgentId) {
+  if (!panelId) {
     return NextResponse.json(
-      { error: 'panelId and elevenlabsAgentId required' },
+      { error: 'panelId required' },
       { status: 400 }
     );
   }
 
+  // Verify panel exists and get its elevenlabs_agent_id
+  const { data: panel, error: panelError } = await supabase
+    .from('agents')
+    .select('id, elevenlabs_agent_id')
+    .eq('id', panelId)
+    .single();
+
+  if (panelError || !panel) {
+    console.error('Panel not found:', panelError);
+    return NextResponse.json({ error: 'Panel not found' }, { status: 404 });
+  }
+
+  if (!panel.elevenlabs_agent_id) {
+    console.error('Panel has no ElevenLabs agent configured');
+    return NextResponse.json({ error: 'Panel not configured' }, { status: 400 });
+  }
+
+  // Create interview record (only using columns that exist in the table)
   const { data, error } = await supabase
     .from('interviews')
     .insert({
       panel_id: panelId,
-      elevenlabs_agent_id: elevenlabsAgentId,
-      interviewee_id: intervieweeId ?? null,
       status: 'active',
       started_at: new Date().toISOString(),
     })
@@ -33,5 +50,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to start interview' }, { status: 500 });
   }
 
-  return NextResponse.json({ interviewId: data.id });
+  return NextResponse.json({ 
+    interviewId: data.id,
+    elevenlabsAgentId: panel.elevenlabs_agent_id 
+  });
 }
