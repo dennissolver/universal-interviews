@@ -24,7 +24,7 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
     onDisconnect: () => {
       console.log('Kira disconnected');
     },
-    onError: (err) => {
+    onError: (err: Error | string) => {
       console.error('Kira error:', err);
       setError('Connection error. Please try again.');
       setIsConnecting(false);
