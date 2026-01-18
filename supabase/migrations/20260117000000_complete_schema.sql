@@ -567,6 +567,97 @@ WHERE al.created_at > NOW() - INTERVAL '7 days'
 ORDER BY activity_at DESC;
 
 -- ============================================================================
+-- RLS POLICIES FOR NEW TABLES
+-- ============================================================================
+-- Enable RLS with permissive policies (child platforms use service role key)
+-- These policies allow all operations, which is appropriate for child platforms
+-- that don't have user-level authentication
+
+-- Panel drafts
+ALTER TABLE panel_drafts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on panel_drafts" ON panel_drafts FOR ALL USING (true) WITH CHECK (true);
+
+-- Interview evaluations
+ALTER TABLE interview_evaluations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on interview_evaluations" ON interview_evaluations FOR ALL USING (true) WITH CHECK (true);
+
+-- Panel insights
+ALTER TABLE panel_insights ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on panel_insights" ON panel_insights FOR ALL USING (true) WITH CHECK (true);
+
+-- Analyst sessions
+ALTER TABLE analyst_sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on analyst_sessions" ON analyst_sessions FOR ALL USING (true) WITH CHECK (true);
+
+-- Analyst messages
+ALTER TABLE analyst_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on analyst_messages" ON analyst_messages FOR ALL USING (true) WITH CHECK (true);
+
+-- Analyst saved queries
+ALTER TABLE analyst_saved_queries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on analyst_saved_queries" ON analyst_saved_queries FOR ALL USING (true) WITH CHECK (true);
+
+-- Reports
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on reports" ON reports FOR ALL USING (true) WITH CHECK (true);
+
+-- Exports
+ALTER TABLE exports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on exports" ON exports FOR ALL USING (true) WITH CHECK (true);
+
+-- Alerts
+ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on alerts" ON alerts FOR ALL USING (true) WITH CHECK (true);
+
+-- Panel health snapshots
+ALTER TABLE panel_health_snapshots ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on panel_health_snapshots" ON panel_health_snapshots FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================================
+-- ENABLE REAL-TIME SUBSCRIPTIONS
+-- ============================================================================
+-- Required for frontend real-time features (draft detection, live updates)
+
+DO $$
+BEGIN
+  -- Enable real-time for panel_drafts (draft detection on /create page)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+    AND tablename = 'panel_drafts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE panel_drafts;
+  END IF;
+
+  -- Enable real-time for agents (panel status updates)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+    AND tablename = 'agents'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE agents;
+  END IF;
+
+  -- Enable real-time for interviews (live interview tracking)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+    AND tablename = 'interviews'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE interviews;
+  END IF;
+
+  -- Enable real-time for alerts (live notifications)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+    AND tablename = 'alerts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE alerts;
+  END IF;
+END $$;
+
+-- ============================================================================
 -- DEFAULT DATA
 -- ============================================================================
 
