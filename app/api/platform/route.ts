@@ -6,7 +6,6 @@ export async function GET() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
     let platform = null;
 
     // Try to fetch from database if configured
@@ -30,11 +29,13 @@ export async function GET() {
 
     // Return config from database or env vars
     const agentId = platform?.elevenlabs_agent_id || process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+    const insightsAgentId = platform?.settings?.kira_agent_id || process.env.NEXT_PUBLIC_KIRA_AGENT_ID;
 
     return NextResponse.json({
       name: platform?.name || process.env.NEXT_PUBLIC_PLATFORM_NAME || 'Interview Platform',
       company_name: platform?.company_name || process.env.NEXT_PUBLIC_COMPANY_NAME,
       elevenlabs_agent_id: agentId,
+      insightsAgentId: insightsAgentId,
       vercel_url: platform?.vercel_url || process.env.NEXT_PUBLIC_VERCEL_URL,
     });
   } catch (err: any) {
@@ -44,6 +45,7 @@ export async function GET() {
       name: process.env.NEXT_PUBLIC_PLATFORM_NAME || 'Interview Platform',
       company_name: process.env.NEXT_PUBLIC_COMPANY_NAME,
       elevenlabs_agent_id: process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID,
+      insightsAgentId: process.env.NEXT_PUBLIC_KIRA_AGENT_ID,
       vercel_url: process.env.NEXT_PUBLIC_VERCEL_URL,
     });
   }
