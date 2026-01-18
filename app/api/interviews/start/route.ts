@@ -2,12 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function POST(req: NextRequest) {
+  const supabase = getSupabase();
   const { panelId } = await req.json();
 
   if (!panelId) {
@@ -50,8 +53,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to start interview' }, { status: 500 });
   }
 
-  return NextResponse.json({ 
+  return NextResponse.json({
     interviewId: data.id,
-    elevenlabsAgentId: panel.elevenlabs_agent_id 
+    elevenlabsAgentId: panel.elevenlabs_agent_id
   });
 }
+

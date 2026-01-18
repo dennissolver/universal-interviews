@@ -2,16 +2,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // GET - Fetch panel/agent details
 export async function GET(
   request: NextRequest,
   { params }: { params: { panelId: string } }
 ) {
+  const supabase = getSupabase();
   const { panelId } = params
 
   try {
@@ -64,6 +67,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { panelId: string } }
 ) {
+  const supabase = getSupabase();
   const { panelId } = params
 
   try {
@@ -120,6 +124,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { panelId: string } }
 ) {
+  const supabase = getSupabase();
   const { panelId } = params
 
   try {

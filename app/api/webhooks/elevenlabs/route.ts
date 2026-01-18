@@ -2,16 +2,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // Sandra's setup agent ID
 const SETUP_AGENT_ID = process.env.ELEVENLABS_SETUP_AGENT_ID || 'agent_8101kcn42dk7ec0va4pvzg5f0b90';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const supabase = getSupabase();
   try {
+    const supabase = getSupabase();
     const payload = await request.json();
     console.log('ElevenLabs webhook received:', JSON.stringify(payload, null, 2));
 
@@ -42,6 +46,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 // SETUP CONVERSATIONS (Sandra - Panel Creation)
 // ============================================================================
 async function handleSetupConversation(data: any, conversation_id: string): Promise<NextResponse> {
+  const supabase = getSupabase();
   console.log('Processing SETUP conversation:', conversation_id);
 
   const { agent_id, status, transcript, analysis, metadata } = data;
@@ -76,6 +81,7 @@ async function handleSetupConversation(data: any, conversation_id: string): Prom
 // INTERVIEW TRANSCRIPTS
 // ============================================================================
 async function handleInterviewTranscript(data: any, conversation_id: string): Promise<NextResponse> {
+  const supabase = getSupabase();
   console.log('Processing INTERVIEW transcript:', conversation_id);
 
   const { agent_id, status, transcript, analysis, metadata } = data;
@@ -190,6 +196,7 @@ async function handleInterviewTranscript(data: any, conversation_id: string): Pr
 // ============================================================================
 
 async function findInterviewByConversationId(conversation_id: string): Promise<any | null> {
+  const supabase = getSupabase();
   const { data } = await supabase
     .from('interviews')
     .select('id, panel_id, interviewee_id')
@@ -199,6 +206,7 @@ async function findInterviewByConversationId(conversation_id: string): Promise<a
 }
 
 async function findInterviewByAgentFallback(agent_id: string): Promise<any | null> {
+  const supabase = getSupabase();
   // Find most recent unlinked interview for this agent (within last 2 hours)
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
@@ -428,6 +436,7 @@ function cleanCity(response: string): string | null {
 // ============================================================================
 
 export async function GET(): Promise<NextResponse> {
+  const supabase = getSupabase();
   return NextResponse.json({
     status: 'ElevenLabs webhook endpoint active',
     setup_agent_id: SETUP_AGENT_ID,
@@ -435,3 +444,4 @@ export async function GET(): Promise<NextResponse> {
     features: ['demographic_extraction', 'city_capture', 'improved_cleaning']
   });
 }
+

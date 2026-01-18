@@ -3,12 +3,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { clientConfig } from '@/config/client';
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 interface Interviewee { name: string; email: string; custom_field?: string; }
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabase();
   try {
+    const supabase = getSupabase();
     const { panelId, interviewees } = await request.json();
     if (!panelId || !interviewees || !Array.isArray(interviewees)) return NextResponse.json({ error: 'Panel ID and interviewees array required' }, { status: 400 });
 
@@ -53,3 +60,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ results });
   } catch (error: any) { return NextResponse.json({ error: error.message }, { status: 500 }); }
 }
+

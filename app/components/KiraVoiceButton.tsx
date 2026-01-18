@@ -31,6 +31,7 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
     },
   });
 
+  // Fetch the insights agent ID on mount
   useEffect(() => {
     async function fetchAgentId() {
       try {
@@ -58,6 +59,7 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
     setError(null);
 
     try {
+      // Get signed URL from backend
       const res = await fetch('/api/kira/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -69,7 +71,11 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
       }
 
       const { signedUrl } = await res.json();
+
+      // Request microphone permission
       await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Start conversation with signed URL
       await conversation.startSession({ signedUrl });
     } catch (err) {
       console.error('Failed to start Kira:', err);
@@ -86,6 +92,7 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
 
   return (
     <>
+      {/* Voice Button */}
       <button
         onClick={() => setIsOpen(true)}
         className={`group relative flex items-center gap-3 px-5 py-3 bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500 rounded-2xl font-medium transition-all hover:shadow-lg hover:shadow-violet-500/25 ${className}`}
@@ -99,9 +106,11 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
         <span>Talk to Kira</span>
       </button>
 
+      {/* Modal */}
       {isOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-zinc-900 rounded-2xl max-w-md w-full border border-zinc-800 overflow-hidden">
+            {/* Header */}
             <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-500 flex items-center justify-center ${isConnected ? 'animate-pulse' : ''}`}>
@@ -129,6 +138,7 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
               </button>
             </div>
 
+            {/* Content */}
             <div className="p-6">
               {!isConnected && (
                 <>
@@ -142,12 +152,21 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
                     </p>
                   )}
 
+                  {/* Example Questions */}
                   <div className="mb-6">
                     <p className="text-xs text-zinc-500 uppercase tracking-wide mb-3">Try asking:</p>
                     <div className="space-y-2">
-                      {["What are the main pain points?", "Show me quotes about pricing", "Summarize the sentiment trends", "What do people want most?"].map((question, i) => (
-                        <div key={i} className="px-3 py-2 bg-zinc-800/50 rounded-lg text-sm text-zinc-400 border border-zinc-700/50">
-                          &quot;{question}&quot;
+                      {[
+                        "What are the main pain points?",
+                        "Show me quotes about pricing",
+                        "Summarize the sentiment trends",
+                        "What do people want most?"
+                      ].map((question, i) => (
+                        <div
+                          key={i}
+                          className="px-3 py-2 bg-zinc-800/50 rounded-lg text-sm text-zinc-400 border border-zinc-700/50"
+                        >
+                          "{question}"
                         </div>
                       ))}
                     </div>
@@ -171,6 +190,7 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
                 </div>
               )}
 
+              {/* Start/Stop Button */}
               {!isConnected ? (
                 <button
                   onClick={startConversation}

@@ -6,10 +6,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 const EVALUATION_PROMPT = `You are an expert qualitative research analyst. Analyze this interview transcript and extract structured insights.
 
@@ -108,7 +110,9 @@ async function evaluateInterview(
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const supabase = getSupabase();
   try {
+    const supabase = getSupabase();
     const body = await request.json();
     const { interview_id, batch = false, limit = 10 } = body;
 
@@ -284,6 +288,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
 // GET - Check evaluation status
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  const supabase = getSupabase();
   const { searchParams } = new URL(request.url);
   const interviewId = searchParams.get('interview_id');
 
@@ -317,3 +322,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     pending: (totalInterviews || 0) - (evaluatedCount || 0)
   });
 }
+
+
