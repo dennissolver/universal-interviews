@@ -52,7 +52,7 @@ export default function DraftEditPage() {
   useEffect(() => {
     async function fetchPanel() {
       try {
-        const response = await fetch(`/api/panels/${draftId}`);
+        const response = await fetch(`/api/panels/drafts/${draftId}`);
         if (!response.ok) throw new Error('Panel not found');
         const data = await response.json();
 
@@ -124,7 +124,7 @@ export default function DraftEditPage() {
     setSaveStatus('saving');
 
     try {
-      const response = await fetch(`/api/panels/${draftId}`, {
+      const response = await fetch(`/api/panels/drafts/${draftId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(panel)
@@ -149,7 +149,7 @@ export default function DraftEditPage() {
 
     try {
       // First save any pending changes
-      await fetch(`/api/panels/${draftId}`, {
+      await fetch(`/api/panels/drafts/${draftId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(panel)
