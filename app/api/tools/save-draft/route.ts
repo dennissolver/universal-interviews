@@ -1,6 +1,4 @@
 // app/api/tools/save-draft/route.ts
-// Sandra calls this to save a draft panel for user review/editing before creation
-
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -11,120 +9,159 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    // Optional shared-secret protection
-    const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const providedSecret = request.headers.get('X-Shared-Secret');
-      if (providedSecret !== webhookSecret) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    }
-
     const body = await request.json();
-    console.log('save-draft received:', JSON.stringify(body, null, 2));
+    console.log('[save-draft] Received:', JSON.stringify(body, null, 2));
 
-    const {
-      name,
-      description,
-      questions,
-      tone,
-      target_audience,
-      duration_minutes,
-      agent_name,
-      voice_gender,
-      interview_context, // NEW: B2B or B2C
-      closing_message,
-      company_name,
-    } = body;
+    // ElevenLabs sends conversation_id in various ways
+    const conversation_id =
+      body.conversation_id ||
+      body.conversationId ||
+      body.context?.conversation_id ||
+      request.headers.get('x-conversation-id') ||
+      null;
 
-    if (!name) {
-      return NextResponse.json(
-        { error: 'Panel name is required' },
-        { status: 400 }
-      );
-    }
+    // Flexibly map Sandra's output to our schema
+    // Sandra might use different field names, so we check multiple possibilities
 
-    // Normalize questions
+    const name =
+      body.name ||
+      body.panel_name ||
+      body.study_name ||
+      body.survey_name ||
+      body.purpose ||
+      body.title ||
+      'Untitled Panel';
+
+    const description =
+      body.description ||
+      body.research_objective ||
+      body.objective ||
+      body.purpose ||
+      body.summary ||
+      '';
+
+    const target_audience =
+      body.target_audience ||
+      body.target_participants ||
+      body.participants ||
+      body.audience ||
+      '';
+
+    const tone =
+      body.tone ||
+      body.tone_style ||
+      body.style ||
+      body.interview_tone ||
+      'Friendly';
+
+    const duration_minutes =
+      body.duration_minutes ||
+      body.duration ||
+      body.interview_length ||
+      body.length_minutes ||
+      15;
+
+    const agent_name =
+      body.agent_name ||
+      body.interviewer_name ||
+      body.ai_name ||
+      'Alex';
+
+    const voice_gender =
+      body.voice_gender ||
+      body.gender ||
+      body.voice ||
+      'female';
+
+    const closing_message =
+      body.closing_message ||
+      body.closing_remarks ||
+      body.thank_you_message ||
+      body.outro ||
+      'Thank you for your time and contributions.';
+
+    const greeting =
+      body.greeting ||
+      body.opening ||
+      body.intro ||
+      body.opening_message ||
+      null;
+
+    // Handle questions - could be array of strings or array of objects or comma-separated
     let questionsList: string[] = [];
-    if (Array.isArray(questions)) {
-      questionsList = questions;
-    } else if (typeof questions === 'string') {
-      questionsList = questions
-        .split(/[,\n]+/)
-        .map((q: string) => q.trim())
-        .filter(Boolean);
+    const rawQuestions =
+      body.questions ||
+      body.key_questions ||
+      body.key_questions_areas ||
+      body.interview_questions ||
+      body.survey_questions ||
+      [];
+
+    if (typeof rawQuestions === 'string') {
+      questionsList = rawQuestions.split(',').map((q: string) => q.trim()).filter(Boolean);
+    } else if (Array.isArray(rawQuestions)) {
+      questionsList = rawQuestions.map((q: any) => {
+        if (typeof q === 'string') return q;
+        if (typeof q === 'object' && q.question) return q.question;
+        if (typeof q === 'object' && q.text) return q.text;
+        return String(q);
+      }).filter(Boolean);
     }
 
-    // Generate slug
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 50);
+    // Extract constraints into description if provided
+    let fullDescription = description;
+    const constraints = body.constraints_requirements || body.constraints || body.requirements;
+    if (constraints && Array.isArray(constraints)) {
+      fullDescription = `${description}\n\nRequirements: ${constraints.join(', ')}`;
+    }
 
-    // Validate interview_context
-    const validContext = interview_context === 'B2C' ? 'B2C' : 'B2B'; // Default to B2B
-
-    // Save as draft (no ElevenLabs agent created yet)
+    // Save draft to database
     const { data: draft, error: dbError } = await supabase
-      .from('agents')
+      .from('panel_drafts')
       .insert({
         name,
-        slug: `draft-${slug}-${Date.now()}`,
-        description: description || '',
-        interview_type: 'customer research',
-        elevenlabs_agent_id: null,
-        greeting: '',
+        description: fullDescription.trim(),
+        target_audience,
+        tone,
+        duration_minutes: typeof duration_minutes === 'number' ? duration_minutes : parseInt(duration_minutes) || 15,
         questions: questionsList,
+        agent_name,
+        voice_gender,
+        closing_message,
+        greeting,
+        conversation_id,
         status: 'draft',
-        // Direct columns:
-        interviewer_tone: tone || 'friendly and professional',
-        target_interviewees: target_audience || '',
-        estimated_duration_mins: duration_minutes || 15,
-        closing_message: closing_message || 'Thank you for your time and insights.',
-        agent_name: agent_name || 'Alex',
-        voice_gender: voice_gender || 'female',
-        company_name: company_name || '',
-        interview_context: validContext, // NEW: B2B or B2C
       })
       .select()
       .single();
 
     if (dbError) {
-      console.error('Supabase error:', dbError);
-      throw dbError;
+      console.error('[save-draft] Database error:', dbError);
+      return NextResponse.json({
+        error: `Failed to save draft: ${dbError.message}`,
+        success: false
+      }, { status: 500 });
     }
 
-    console.log('Draft saved:', draft.id, '| interview_context:', validContext);
+    console.log('[save-draft] Saved draft:', draft.id, 'conversation_id:', conversation_id);
 
-    // Return the edit URL for Sandra to mention
-    const editUrl = `/panel/draft/${draft.id}/edit`;
-
+    // Return success message for Sandra to speak
     return NextResponse.json({
       success: true,
-      draftId: draft.id,
-      editUrl,
-      interviewContext: validContext,
-      message: `Draft saved. User can review and edit at ${editUrl}`,
+      message: `I've saved your interview panel as a draft. You can review it on your screen now.`,
+      draft_id: draft.id,
+      review_url: `/panels/drafts/${draft.id}`,
     });
+
   } catch (error: any) {
-    console.error('save-draft error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to save draft' },
-      { status: 500 }
-    );
+    console.error('[save-draft] Error:', error);
+    return NextResponse.json({
+      error: error.message || 'Failed to save draft',
+      success: false
+    }, { status: 500 });
   }
 }
 
 export async function GET() {
-  return NextResponse.json({
-    status: 'active',
-    endpoint: 'save-draft',
-    description: 'Saves panel configuration as draft for user review before creation',
-    fields: {
-      required: ['name', 'questions'],
-      optional: ['description', 'tone', 'target_audience', 'duration_minutes', 'agent_name', 'voice_gender', 'interview_context', 'closing_message', 'company_name'],
-      interview_context: 'B2B (asks for company name) or B2C (no company question) - defaults to B2B'
-    }
-  });
+  return NextResponse.json({ status: 'active', endpoint: 'save-draft' });
 }
