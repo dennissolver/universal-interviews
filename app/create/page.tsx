@@ -190,7 +190,7 @@ export default function CreatePage() {
   // Navigate to draft review
   const goToReviewDraft = () => {
     if (currentDraft) {
-      router.push(`/panels/drafts/${currentDraft.id}`);
+      router.push(`/panel/draft/${currentDraft.id}/edit`);
     }
   };
 
