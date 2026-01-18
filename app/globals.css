@@ -1,0 +1,15 @@
+/* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #8B5CF6;
+  --color-accent: #10B981;
+  --color-background: #0F172A;
+}
+
+body {
+  background-color: var(--color-background);
+  color: #F8FAFC;
+}
