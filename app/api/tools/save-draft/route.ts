@@ -9,8 +9,16 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body = await request.json();
     console.log('[save-draft] Received:', JSON.stringify(body, null, 2));
+
+    // Handle panel_config wrapper from ElevenLabs tool
+    if (body.panel_config) {
+      const config = typeof body.panel_config === 'string'
+        ? JSON.parse(body.panel_config)
+        : body.panel_config;
+      body = { ...body, ...config };
+    }
 
     // ElevenLabs sends conversation_id in various ways
     const conversation_id =
@@ -150,7 +158,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: `I've saved your interview panel as a draft. You can review it on your screen now.`,
       draft_id: draft.id,
-      review_url: `/panels/drafts/${draft.id}`,
+      review_url: `/panel/draft/${draft.id}/edit`,
     });
 
   } catch (error: any) {
