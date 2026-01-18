@@ -1,6 +1,9 @@
 // app/components/KiraVoiceButton.tsx
 'use client';
 
+impo// app/components/KiraVoiceButton.tsx
+'use client';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useConversation } from '@11labs/react';
 
@@ -178,3 +181,64 @@ export default function KiraVoiceButton({ panelId, panelName, className = '' }: 
                 <div className="text-center py-8">
                   <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-fuchsia-500/20 to-violet-500/20 flex items-center justify-center">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-500 animate-pulse" />
+                  </div>
+                  <p className="text-zinc-300 mb-2">Kira is listening...</p>
+                  <p className="text-sm text-zinc-500">Ask your question</p>
+                </div>
+              )}
+
+              {error && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
+                  {error}
+                </div>
+              )}
+
+              {/* Start/Stop Button */}
+              {!isConnected ? (
+                <button
+                  onClick={startConversation}
+                  disabled={isConnecting || !agentId}
+                  className="w-full py-3 bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isConnecting ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Connecting...
+                    </>
+                  ) : !agentId ? (
+                    'Kira not available'
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                      Start Voice Conversation
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={stopConversation}
+                  className="w-full py-3 bg-red-600 hover:bg-red-500 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                  </svg>
+                  End Conversation
+                </button>
+              )}
+
+              <p className="text-xs text-zinc-600 text-center mt-4">
+                Powered by ElevenLabs Conversational AI
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
