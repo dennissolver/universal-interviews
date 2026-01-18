@@ -1,19 +1,13 @@
 // app/create/page.tsx
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Sparkles,
-  Loader2,
-  CheckCircle,
-  MessageSquare,
-  FileEdit,
-  ArrowRight
-} from 'lucide-react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import { Loader2, FileEdit, CheckCircle, Phone } from 'lucide-react';
 
-interface PlatformConfig {
+interface Platform {
+  id: string;
   name: string;
   elevenlabs_agent_id: string;
 }
@@ -24,35 +18,38 @@ interface Draft {
   created_at: string;
 }
 
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 export default function CreatePage() {
   const router = useRouter();
-  const [platform, setPlatform] = useState<PlatformConfig | null>(null);
+
+  // Platform state
+  const [platform, setPlatform] = useState<Platform | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Widget state
   const [widgetLoaded, setWidgetLoaded] = useState(false);
 
   // Draft detection state
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [currentDraft, setCurrentDraft] = useState<Draft | null>(null);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const supabaseRef = useRef<SupabaseClient | null>(null);
 
-  // Initialize Supabase client once
-  useEffect(() => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // Refs for cleanup
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const realtimeChannelRef = useRef<any>(null);
 
-    if (supabaseUrl && supabaseAnonKey) {
-      supabaseRef.current = createClient(supabaseUrl, supabaseAnonKey);
-    }
-  }, []);
-
-  // Fetch platform config on mount
+  // Fetch platform config
   useEffect(() => {
     async function fetchPlatform() {
       try {
         const res = await fetch('/api/platform');
-        if (!res.ok) throw new Error('Failed to fetch platform config');
+        if (!res.ok) throw new Error('Failed to load platform');
         const data = await res.json();
         setPlatform(data);
       } catch (err: any) {
@@ -68,7 +65,6 @@ export default function CreatePage() {
   useEffect(() => {
     if (!platform?.elevenlabs_agent_id) return;
 
-    // Check if script already exists
     if (document.querySelector('script[src*="elevenlabs.io/convai-widget"]')) {
       setWidgetLoaded(true);
       return;
@@ -81,7 +77,7 @@ export default function CreatePage() {
     document.body.appendChild(script);
   }, [platform?.elevenlabs_agent_id]);
 
-  // Set session start time when widget loads (user can start talking)
+  // Set session start time when widget loads
   useEffect(() => {
     if (widgetLoaded && !sessionStartTime) {
       setSessionStartTime(new Date());
@@ -89,27 +85,57 @@ export default function CreatePage() {
     }
   }, [widgetLoaded, sessionStartTime]);
 
-  // REAL-TIME SUBSCRIPTION: Listen for new drafts in agents table
-  useEffect(() => {
-    if (!widgetLoaded || !sessionStartTime || !supabaseRef.current) {
-      return;
+  // POLLING FUNCTION: Check for new drafts
+  const checkForDraft = useCallback(async () => {
+    if (!sessionStartTime || draftReady) return;
+
+    try {
+      const { data: drafts, error } = await supabase
+        .from('panel_drafts')
+        .select('id, name, created_at')
+        .eq('status', 'draft')
+        .gte('created_at', sessionStartTime.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('[CreatePage] Poll error:', error);
+        return;
+      }
+
+      if (drafts && drafts.length > 0) {
+        const draft = drafts[0];
+        console.log('[CreatePage] ✅ Draft found via polling:', draft.name);
+        setCurrentDraft(draft);
+        setDraftReady(true);
+
+        // Stop polling once found
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+      }
+    } catch (err) {
+      console.error('[CreatePage] Poll exception:', err);
     }
+  }, [sessionStartTime, draftReady]);
 
-    const supabase = supabaseRef.current;
+  // DUAL DETECTION: Real-time subscription + Polling fallback
+  useEffect(() => {
+    if (!widgetLoaded || !sessionStartTime) return;
 
-    console.log('[CreatePage] Starting real-time subscription for drafts...');
+    console.log('[CreatePage] Starting draft detection...');
     console.log('[CreatePage] Session started at:', sessionStartTime.toISOString());
 
-    // Subscribe to INSERT events on agents table where status = 'draft'
+    // === REAL-TIME SUBSCRIPTION ===
     const channel = supabase
-      .channel('draft-detection')
+      .channel('draft-detection-' + Date.now())
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'agents',
-          filter: 'status=eq.draft'
+          table: 'panel_drafts'
         },
         (payload) => {
           console.log('[CreatePage] Real-time: New draft detected!', payload);
@@ -122,6 +148,12 @@ export default function CreatePage() {
             console.log('[CreatePage] ✅ Draft verified - created during this session:', newDraft.name);
             setCurrentDraft(newDraft);
             setDraftReady(true);
+
+            // Stop polling since we found it
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
           } else {
             console.log('[CreatePage] ⚠️ Draft ignored - created before session started');
           }
@@ -131,19 +163,38 @@ export default function CreatePage() {
         console.log('[CreatePage] Subscription status:', status);
       });
 
-    // Cleanup subscription on unmount
-    return () => {
-      console.log('[CreatePage] Cleaning up real-time subscription');
-      supabase.removeChannel(channel);
-    };
-  }, [widgetLoaded, sessionStartTime]);
+    realtimeChannelRef.current = channel;
 
+    // === POLLING FALLBACK ===
+    // Start polling every 3 seconds as backup in case real-time fails
+    pollIntervalRef.current = setInterval(() => {
+      console.log('[CreatePage] Polling for draft...');
+      checkForDraft();
+    }, 3000);
+
+    // Also do an immediate check
+    checkForDraft();
+
+    // Cleanup
+    return () => {
+      console.log('[CreatePage] Cleaning up draft detection');
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+      }
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [widgetLoaded, sessionStartTime, checkForDraft]);
+
+  // Navigate to draft review
   const goToReviewDraft = () => {
     if (currentDraft) {
-      router.push(`/panel/draft/${currentDraft.id}/edit`);
+      router.push(`/panels/drafts/${currentDraft.id}`);
     }
   };
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -152,15 +203,13 @@ export default function CreatePage() {
     );
   }
 
+  // Error state
   if (error || !platform?.elevenlabs_agent_id) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 max-w-md text-center">
           <p className="text-red-400">
             {error || 'Platform not configured. Please contact support.'}
-          </p>
-          <p className="text-white/40 text-sm mt-2">
-            Missing: ElevenLabs Agent ID
           </p>
         </div>
       </div>
@@ -169,124 +218,90 @@ export default function CreatePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Header */}
-      <div className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-white font-semibold">{platform.name}</h1>
-              <p className="text-white/50 text-sm">Create Interview Panel</p>
-            </div>
-          </div>
+      <div className="max-w-4xl mx-auto px-6 py-12">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-white mb-4">
+            Create Interview Panel
+          </h1>
+          <p className="text-lg text-purple-200/70">
+            Talk to Sandra to set up your interview panel. She&apos;ll guide you through the process.
+          </p>
         </div>
-      </div>
 
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        {/* Main Content */}
-        <div className="bg-white/5 border border-white/10 rounded-3xl p-8">
-          <div className="text-center mb-8">
-            <div className="w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600">
-              <MessageSquare className="w-10 h-10 text-white" />
+        {/* Main Card */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+          {/* Instructions */}
+          <div className="mb-8 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+            <div className="flex items-start gap-3">
+              <Phone className="w-5 h-5 text-purple-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-purple-200 font-medium mb-1">How it works:</p>
+                <ol className="text-purple-200/70 text-sm space-y-1 list-decimal list-inside">
+                  <li>Click the purple button below to start talking with Sandra</li>
+                  <li>Tell her about your research goals and target audience</li>
+                  <li>She&apos;ll create a draft panel for you to review</li>
+                  <li>The &quot;Review Draft&quot; button will turn green when ready</li>
+                </ol>
+              </div>
             </div>
-
-            <h2 className="text-2xl font-bold text-white mb-2">
-              Meet Sandra
-            </h2>
-            <p className="text-white/60 max-w-md mx-auto">
-              Sandra is your AI assistant who will help you create a custom interview panel.
-              Click the chat button in the bottom right to start talking!
-            </p>
           </div>
 
-          {/* REVIEW DRAFT BUTTON - Always visible, turns green when ready */}
-          <div className="mt-8 flex flex-col items-center">
+          {/* ElevenLabs Widget */}
+          <div className="flex justify-center mb-8">
+            {widgetLoaded ? (
+              <elevenlabs-convai agent-id={platform.elevenlabs_agent_id}></elevenlabs-convai>
+            ) : (
+              <div className="flex items-center gap-2 text-purple-300">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Loading voice assistant...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Review Draft Button - Always visible, activates when draft is ready */}
+          <div className="flex justify-center">
             <button
               onClick={goToReviewDraft}
               disabled={!draftReady}
-              className={`inline-flex items-center gap-3 px-8 py-4 rounded-2xl font-semibold text-lg transition-all duration-500 ${
-                draftReady
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/30 hover:shadow-2xl hover:shadow-emerald-500/40 hover:scale-105 cursor-pointer'
-                  : 'bg-white/10 text-white/40 cursor-not-allowed'
-              }`}
+              className={`
+                inline-flex items-center gap-3 px-8 py-4 rounded-2xl font-semibold text-lg
+                transition-all duration-300 transform
+                ${draftReady
+                  ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-105 cursor-pointer'
+                  : 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
+                }
+              `}
             >
               {draftReady ? (
                 <>
                   <CheckCircle className="w-6 h-6" />
-                  Review Draft
-                  <ArrowRight className="w-6 h-6" />
+                  Review Draft: {currentDraft?.name}
                 </>
               ) : (
                 <>
                   <FileEdit className="w-6 h-6" />
                   Review Draft
+                  <span className="text-sm font-normal opacity-50">(waiting for Sandra)</span>
                 </>
               )}
             </button>
-
-            {/* Status indicator below button */}
-            {draftReady && currentDraft ? (
-              <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                <div className="flex items-center justify-center gap-2 text-emerald-400">
-                  <CheckCircle className="w-5 h-5" />
-                  <span className="font-medium">"{currentDraft.name}"</span>
-                </div>
-                <p className="text-white/50 text-sm mt-2 text-center">
-                  Click the button above to review and finalize your panel
-                </p>
-              </div>
-            ) : (
-              <div className="mt-4 flex items-center justify-center gap-2 text-white/40">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Waiting for Sandra to create your draft...</span>
-              </div>
-            )}
           </div>
 
-          {/* Instructions */}
-          <div className="mt-8 pt-8 border-t border-white/10">
-            <h3 className="text-white/80 font-medium mb-4 text-center">What Sandra will help you with:</h3>
-            <div className="grid gap-3 text-sm">
-              {[
-                'Name your interview panel',
-                'Define what type of interviews to conduct',
-                'Set the interviewer tone and style',
-                'Create key questions and topics',
-                'Configure interview duration',
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-3 text-white/60">
-                  <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 text-xs font-medium">
-                    {i + 1}
-                  </div>
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Skip Link */}
-        <div className="mt-8 text-center">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-white/40 hover:text-white/60 text-sm transition-colors"
-          >
-            Skip to dashboard →
-          </button>
+          {/* Status indicator */}
+          {sessionStartTime && !draftReady && (
+            <p className="text-center text-purple-300/50 text-sm mt-4">
+              <Loader2 className="w-4 h-4 inline animate-spin mr-2" />
+              Listening for your draft...
+            </p>
+          )}
         </div>
       </div>
-
-      {/* ElevenLabs Widget - renders as floating button */}
-      {widgetLoaded && (
-        <elevenlabs-convai agent-id={platform.elevenlabs_agent_id}></elevenlabs-convai>
-      )}
     </div>
   );
 }
 
-// TypeScript declaration for the custom element
+// TypeScript declaration for ElevenLabs widget
 declare global {
   namespace JSX {
     interface IntrinsicElements {
