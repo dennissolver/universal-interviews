@@ -5,10 +5,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+};
 
 const ELEVENLABS_API = 'https://api.elevenlabs.io/v1';
 
@@ -22,6 +24,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { panelId: string } }
 ) {
+  const supabase = getSupabase();
   const panelId = params.panelId;
 
   console.log(`[activate] Activating panel: ${panelId}`);

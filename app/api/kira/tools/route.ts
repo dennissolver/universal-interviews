@@ -4,16 +4,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // ============================================================================
 // TOOL HANDLERS
 // ============================================================================
 
 async function listPanels(params: { status?: string }) {
+  const supabase = getSupabase();
   const status = params.status || 'active';
 
   let query = supabase
@@ -28,9 +31,11 @@ async function listPanels(params: { status?: string }) {
 
   if (error) throw error;
 
+  const panels = data ?? [];
+
   return {
-    panel_count: data?.length || 0,
-    panels: data?.map(p => ({
+    panel_count: panels.length,
+    panels: panels.map(p => ({
       name: p.name,
       id: p.id,
       description: p.description,
@@ -45,6 +50,7 @@ async function listPanels(params: { status?: string }) {
 }
 
 async function getPanel(params: { panel_name?: string; panel_id?: string }) {
+  const supabase = getSupabase();
   let query = supabase
     .from('agents')
     .select('*');
@@ -62,13 +68,14 @@ async function getPanel(params: { panel_name?: string; panel_id?: string }) {
   if (error) throw error;
   if (!data) throw new Error('Panel not found');
 
-  // Get recent evaluations for this panel
-  const { data: evals } = await supabase
+  const { data: evalsData } = await supabase
     .from('interview_evaluations')
     .select('sentiment, quality_score, summary')
     .eq('panel_id', data.id)
     .order('created_at', { ascending: false })
     .limit(5);
+
+  const evals = evalsData ?? [];
 
   return {
     name: data.name,
@@ -94,6 +101,7 @@ async function listInterviews(params: {
   limit?: number;
   days_back?: number;
 }) {
+  const supabase = getSupabase();
   const limit = params.limit || 20;
   const status = params.status || 'completed';
 
@@ -133,31 +141,40 @@ async function listInterviews(params: {
 
   if (error) throw error;
 
-  // Get evaluations for these interviews
-  const interviewIds = data?.map(i => i.id) || [];
-  const { data: evals } = await supabase
-    .from('interview_evaluations')
-    .select('interview_id, sentiment, quality_score, executive_summary')
-    .in('interview_id', interviewIds);
+  const interviews = data ?? [];
+  const interviewIds = interviews.map(i => i.id);
 
-  const evalMap = new Map(evals?.map(e => [e.interview_id, e]));
+  let evalMap = new Map<string, any>();
+
+  if (interviewIds.length > 0) {
+    const { data: evalsData } = await supabase
+      .from('interview_evaluations')
+      .select('interview_id, sentiment, quality_score, executive_summary')
+      .in('interview_id', interviewIds);
+
+    const evals = evalsData ?? [];
+    evalMap = new Map(evals.map(e => [e.interview_id, e]));
+  }
 
   return {
-    interview_count: data?.length || 0,
-    interviews: data?.map(i => ({
-      id: i.id,
-      participant_name: i.participant_name,
-      participant_company: i.participant_company,
-      participant_role: i.participant_role,
-      location: i.participant_country,
-      panel_name: (i as any).agents?.name,
-      status: i.status,
-      duration_minutes: i.duration_seconds ? Math.round(i.duration_seconds / 60) : null,
-      completed_at: i.completed_at,
-      sentiment: evalMap.get(i.id)?.sentiment,
-      quality_score: evalMap.get(i.id)?.quality_score,
-      summary: evalMap.get(i.id)?.executive_summary
-    }))
+    interview_count: interviews.length,
+    interviews: interviews.map(i => {
+      const evaluation = evalMap.get(i.id);
+      return {
+        id: i.id,
+        participant_name: i.participant_name,
+        participant_company: i.participant_company,
+        participant_role: i.participant_role,
+        location: i.participant_country,
+        panel_name: (i as any).agents?.name,
+        status: i.status,
+        duration_minutes: i.duration_seconds ? Math.round(i.duration_seconds / 60) : null,
+        completed_at: i.completed_at,
+        sentiment: evaluation?.sentiment,
+        quality_score: evaluation?.quality_score,
+        summary: evaluation?.executive_summary
+      };
+    })
   };
 }
 
@@ -166,6 +183,7 @@ async function getInterview(params: {
   participant_name?: string;
   participant_email?: string;
 }) {
+  const supabase = getSupabase();
   let query = supabase
     .from('interviews')
     .select(`
@@ -188,14 +206,12 @@ async function getInterview(params: {
   if (error) throw error;
   if (!interview) throw new Error('Interview not found');
 
-  // Get transcript
   const { data: transcript } = await supabase
     .from('interview_transcripts')
     .select('transcript_text, analysis')
     .eq('interview_id', interview.id)
     .single();
 
-  // Get evaluation
   const { data: evaluation } = await supabase
     .from('interview_evaluations')
     .select('*')
@@ -218,8 +234,8 @@ async function getInterview(params: {
     duration_minutes: interview.duration_seconds ? Math.round(interview.duration_seconds / 60) : null,
     started_at: interview.started_at,
     completed_at: interview.completed_at,
-    transcript: transcript?.transcript_text,
-    analysis: transcript?.analysis,
+    transcript: transcript?.transcript_text ?? null,
+    analysis: transcript?.analysis ?? null,
     evaluation: evaluation ? {
       summary: evaluation.summary,
       executive_summary: evaluation.executive_summary,
@@ -241,11 +257,11 @@ async function searchTranscripts(params: {
   panel_name?: string;
   limit?: number;
 }) {
+  const supabase = getSupabase();
   const limit = params.limit || 10;
   const searchQuery = params.query.toLowerCase();
 
-  // Get transcripts with text search
-  let query = supabase
+  const query = supabase
     .from('interview_transcripts')
     .select(`
       id,
@@ -260,27 +276,27 @@ async function searchTranscripts(params: {
       )
     `)
     .not('transcript_text', 'is', null)
-    .limit(50); // Get more, then filter
-
-  if (params.panel_name) {
-    query = query.ilike('interviews.agents.name', `%${params.panel_name}%`);
-  }
+    .limit(50);
 
   const { data, error } = await query;
 
   if (error) throw error;
 
-  // Search through transcripts and extract matching sections
+  const transcripts = data ?? [];
   const results: any[] = [];
 
-  for (const t of data || []) {
+  for (const t of transcripts) {
     if (!t.transcript_text) continue;
+
+    if (params.panel_name) {
+      const panelName = (t as any).interviews?.agents?.name?.toLowerCase() ?? '';
+      if (!panelName.includes(params.panel_name.toLowerCase())) continue;
+    }
 
     const text = t.transcript_text.toLowerCase();
     const index = text.indexOf(searchQuery);
 
     if (index !== -1) {
-      // Extract context around the match
       const start = Math.max(0, index - 150);
       const end = Math.min(text.length, index + searchQuery.length + 150);
       const excerpt = t.transcript_text.substring(start, end);
@@ -311,11 +327,11 @@ async function getStatistics(params: {
   metric?: string;
   days_back?: number;
 }) {
+  const supabase = getSupabase();
   const daysBack = params.days_back || 30;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysBack);
 
-  // Build panel filter
   let panelId: string | null = null;
   if (params.panel_name) {
     const { data: panel } = await supabase
@@ -323,10 +339,9 @@ async function getStatistics(params: {
       .select('id')
       .ilike('name', `%${params.panel_name}%`)
       .single();
-    panelId = panel?.id || null;
+    panelId = panel?.id ?? null;
   }
 
-  // Get interview counts
   let interviewQuery = supabase
     .from('interviews')
     .select('status, duration_seconds, completed_at', { count: 'exact' });
@@ -335,13 +350,15 @@ async function getStatistics(params: {
     interviewQuery = interviewQuery.eq('panel_id', panelId);
   }
 
-  const { data: interviews, count: totalCount } = await interviewQuery;
+  const { data: interviewsData, count: totalCount } = await interviewQuery;
 
-  const completedCount = interviews?.filter(i => i.status === 'completed').length || 0;
-  const avgDuration = interviews?.filter(i => i.duration_seconds)
-    .reduce((sum, i) => sum + (i.duration_seconds || 0), 0) / (completedCount || 1);
+  const interviews = interviewsData ?? [];
+  const completedCount = interviews.filter(i => i.status === 'completed').length;
+  const interviewsWithDuration = interviews.filter(i => i.duration_seconds);
+  const avgDuration = interviewsWithDuration.length > 0
+    ? interviewsWithDuration.reduce((sum, i) => sum + (i.duration_seconds || 0), 0) / interviewsWithDuration.length
+    : 0;
 
-  // Get evaluation stats
   let evalQuery = supabase
     .from('interview_evaluations')
     .select('sentiment, quality_score, created_at');
@@ -350,25 +367,29 @@ async function getStatistics(params: {
     evalQuery = evalQuery.eq('panel_id', panelId);
   }
 
-  const { data: evals } = await evalQuery;
+  const { data: evalsData } = await evalQuery;
+
+  const evals = evalsData ?? [];
 
   const sentimentCounts = {
-    positive: evals?.filter(e => e.sentiment === 'positive').length || 0,
-    neutral: evals?.filter(e => e.sentiment === 'neutral').length || 0,
-    negative: evals?.filter(e => e.sentiment === 'negative').length || 0,
-    mixed: evals?.filter(e => e.sentiment === 'mixed').length || 0
+    positive: evals.filter(e => e.sentiment === 'positive').length,
+    neutral: evals.filter(e => e.sentiment === 'neutral').length,
+    negative: evals.filter(e => e.sentiment === 'negative').length,
+    mixed: evals.filter(e => e.sentiment === 'mixed').length
   };
 
-  const avgQuality = evals?.reduce((sum, e) => sum + (e.quality_score || 0), 0) / (evals?.length || 1);
+  const evalsWithQuality = evals.filter(e => e.quality_score != null);
+  const avgQuality = evalsWithQuality.length > 0
+    ? evalsWithQuality.reduce((sum, e) => sum + (e.quality_score || 0), 0) / evalsWithQuality.length
+    : 0;
 
-  // Get panel count if platform-wide
   let panelCount = 1;
   if (!panelId) {
     const { count } = await supabase
       .from('agents')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active');
-    panelCount = count || 0;
+    panelCount = count ?? 0;
   }
 
   return {
@@ -376,7 +397,7 @@ async function getStatistics(params: {
     period_days: daysBack,
     panels: panelCount,
     interviews: {
-      total: totalCount,
+      total: totalCount ?? 0,
       completed: completedCount,
       completion_rate: totalCount ? Math.round((completedCount / totalCount) * 100) : 0,
       average_duration_minutes: Math.round(avgDuration / 60)
@@ -384,7 +405,7 @@ async function getStatistics(params: {
     sentiment: sentimentCounts,
     quality: {
       average_score: Math.round(avgQuality),
-      evaluated_count: evals?.length || 0
+      evaluated_count: evals.length
     }
   };
 }
@@ -394,6 +415,7 @@ async function recallMemory(params: {
   memory_type?: string;
   panel_name?: string;
 }) {
+  const supabase = getSupabase();
   const searchQuery = params.query.toLowerCase();
 
   let query = supabase
@@ -411,15 +433,15 @@ async function recallMemory(params: {
 
   if (error) throw error;
 
-  // Filter by search query (simple text match for now)
-  const matches = data?.filter(m =>
+  const memories = data ?? [];
+
+  const matches = memories.filter(m =>
     m.content.toLowerCase().includes(searchQuery) ||
-    m.title?.toLowerCase().includes(searchQuery) ||
-    m.tags?.some((t: string) => t.toLowerCase().includes(searchQuery))
+    (m.title?.toLowerCase().includes(searchQuery)) ||
+    (m.tags as string[] ?? []).some((t: string) => t.toLowerCase().includes(searchQuery))
   );
 
-  // Update recall stats
-  for (const memory of matches || []) {
+  for (const memory of matches) {
     await supabase
       .from('kira_memory')
       .update({
@@ -431,8 +453,8 @@ async function recallMemory(params: {
 
   return {
     query: params.query,
-    memories_found: matches?.length || 0,
-    memories: matches?.map(m => ({
+    memories_found: matches.length,
+    memories: matches.map(m => ({
       id: m.id,
       type: m.memory_type,
       title: m.title,
@@ -453,6 +475,7 @@ async function saveMemory(params: {
   tags?: string[];
   related_panel?: string;
 }, sessionId?: string) {
+  const supabase = getSupabase();
   let panelId: string | null = null;
 
   if (params.related_panel) {
@@ -461,7 +484,7 @@ async function saveMemory(params: {
       .select('id')
       .ilike('name', `%${params.related_panel}%`)
       .single();
-    panelId = panel?.id || null;
+    panelId = panel?.id ?? null;
   }
 
   const { data, error } = await supabase
@@ -492,6 +515,7 @@ async function getThemes(params: {
   theme_type?: string;
   min_frequency?: number;
 }) {
+  const supabase = getSupabase();
   let panelId: string | null = null;
 
   if (params.panel_name) {
@@ -500,10 +524,9 @@ async function getThemes(params: {
       .select('id')
       .ilike('name', `%${params.panel_name}%`)
       .single();
-    panelId = panel?.id || null;
+    panelId = panel?.id ?? null;
   }
 
-  // Try to get from panel_insights first
   let insightsQuery = supabase
     .from('panel_insights')
     .select('*')
@@ -514,9 +537,11 @@ async function getThemes(params: {
     insightsQuery = insightsQuery.eq('panel_id', panelId);
   }
 
-  const { data: insights } = await insightsQuery;
+  const { data: insightsData } = await insightsQuery;
 
-  if (insights && insights.length > 0) {
+  const insights = insightsData ?? [];
+
+  if (insights.length > 0) {
     const insight = insights[0];
     const themeType = params.theme_type || 'all';
 
@@ -533,7 +558,6 @@ async function getThemes(params: {
     };
   }
 
-  // Fall back to aggregating from evaluations
   let evalQuery = supabase
     .from('interview_evaluations')
     .select('topics, pain_points, desires, key_quotes');
@@ -542,32 +566,35 @@ async function getThemes(params: {
     evalQuery = evalQuery.eq('panel_id', panelId);
   }
 
-  const { data: evals } = await evalQuery;
+  const { data: evalsData } = await evalQuery;
 
-  // Aggregate topics
+  const evals = evalsData ?? [];
+
   const topicCounts = new Map<string, number>();
   const painPoints: any[] = [];
   const desires: any[] = [];
   const quotes: any[] = [];
 
-  for (const e of evals || []) {
-    for (const topic of e.topics || []) {
+  for (const e of evals) {
+    const topics = (e.topics as string[]) ?? [];
+    for (const topic of topics) {
       topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
     }
-    painPoints.push(...(e.pain_points || []));
-    desires.push(...(e.desires || []));
-    quotes.push(...(e.key_quotes || []));
+    painPoints.push(...((e.pain_points as any[]) ?? []));
+    desires.push(...((e.desires as any[]) ?? []));
+    quotes.push(...((e.key_quotes as any[]) ?? []));
   }
 
+  const minFreq = params.min_frequency ?? 1;
   const sortedTopics = Array.from(topicCounts.entries())
     .sort((a, b) => b[1] - a[1])
-    .filter(([_, count]) => count >= (params.min_frequency || 1))
+    .filter(([_, count]) => count >= minFreq)
     .slice(0, 10)
     .map(([topic, count]) => ({ topic, frequency: count }));
 
   return {
     panel: params.panel_name || 'All Panels',
-    interview_count: evals?.length || 0,
+    interview_count: evals.length,
     top_topics: sortedTopics,
     pain_points: painPoints.slice(0, 10),
     desires: desires.slice(0, 10),
@@ -580,10 +607,11 @@ async function getThemes(params: {
 // ============================================================================
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabase();
   try {
+    const supabase = getSupabase();
     const body = await request.json();
 
-    // ElevenLabs sends tool calls in this format
     const { tool_name, parameters, conversation_id } = body;
 
     if (!tool_name) {
@@ -635,15 +663,15 @@ export async function POST(request: NextRequest) {
 
     const duration = Date.now() - startTime;
 
-    // Log tool usage
+    // Log tool usage (fire and forget)
     if (conversation_id) {
-      await supabase.from('kira_tool_log').insert({
+      supabase.from('kira_tool_log').insert({
         tool_name,
         parameters,
         duration_ms: duration,
         success: true,
         result_summary: JSON.stringify(result).substring(0, 200)
-      }).catch(console.error); // Don't fail if logging fails
+      });
     }
 
     return NextResponse.json(result);
@@ -656,3 +684,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

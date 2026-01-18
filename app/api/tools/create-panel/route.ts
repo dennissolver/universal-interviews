@@ -2,10 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // Voice IDs for ElevenLabs
 const VOICE_IDS = {
@@ -24,6 +26,7 @@ function verifyRequest(request: NextRequest): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabase();
   console.log('=== CREATE PANEL ENDPOINT CALLED ===')
 
   // Verify request
@@ -280,3 +283,4 @@ You: "Perfect, thank you John! I really appreciate those details. Now let's dive
 
 Remember: You're having a conversation, not conducting an interrogation. Make participants feel heard and valued.`
 }
+
