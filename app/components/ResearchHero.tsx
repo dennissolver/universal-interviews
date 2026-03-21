@@ -6,11 +6,11 @@ import { ExternalLink, Mic } from 'lucide-react';
 
 export default function ResearchHero() {
   return (
-    <div className="bg-gradient-to-r from-slate-900 via-purple-900/20 to-slate-900 border-b border-purple-500/20">
+    <div className="bg-gradient-to-r from-slate-900 via-green-900/20 to-slate-900 border-b border-green-500/20">
       <div className="max-w-4xl mx-auto px-4 py-6 text-center">
         {/* Research Series Badge */}
-        <div className="inline-flex items-center gap-2 bg-purple-500/10 border border-purple-500/30 rounded-full px-4 py-1 mb-3">
-          <span className="text-purple-400 text-sm font-medium">📊 Investor Research Series</span>
+        <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-full px-4 py-1 mb-3">
+          <span className="text-green-400 text-sm font-medium">📊 Investor Research Series</span>
         </div>
 
         {/* Attribution */}
@@ -33,7 +33,7 @@ export default function ResearchHero() {
             href="https://corporateaisolutions.com/200k/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
           >
             See Our $200K Raise
             <ExternalLink className="w-4 h-4" />

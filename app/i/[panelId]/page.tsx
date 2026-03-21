@@ -249,7 +249,7 @@ export default function InterviewPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+        <Loader2 className="w-8 h-8 text-green-400 animate-spin" />
       </div>
     );
   }
@@ -310,7 +310,7 @@ export default function InterviewPage() {
 
           {status === 'connecting' && (
             <div className="flex items-center justify-center gap-3">
-              <Loader2 className="w-6 h-6 animate-spin text-purple-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-green-400" />
               <span>Connecting...</span>
             </div>
           )}

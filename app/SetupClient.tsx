@@ -195,7 +195,7 @@ export default function SetupClient() {
       case 'loading':
         return (
           <div className="text-center">
-            <Loader2 className="w-12 h-12 text-purple-500 animate-spin mx-auto mb-4" />
+            <Loader2 className="w-12 h-12 text-green-500 animate-spin mx-auto mb-4" />
             <p className="text-slate-400">Loading...</p>
           </div>
         );
@@ -210,7 +210,7 @@ export default function SetupClient() {
               </div>
               <button
                 onClick={() => setState('ready_for_setup')}
-                className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-lg flex items-center gap-2 transition"
+                className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg flex items-center gap-2 transition"
               >
                 <Plus className="w-4 h-4" />
                 New Panel
@@ -221,8 +221,8 @@ export default function SetupClient() {
               {panels.map((panel) => (
                 <div key={panel.id} className="bg-slate-900 rounded-xl p-4 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center">
-                      <Bot className="w-6 h-6 text-purple-400" />
+                    <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-green-400" />
                     </div>
                     <div>
                       <h3 className="font-medium">{panel.name}</h3>
@@ -234,7 +234,7 @@ export default function SetupClient() {
                       <MessageSquare className="w-4 h-4" />
                       Test
                     </a>
-                    <a href={`/panel/${panel.id}/invite`} className="bg-purple-600 hover:bg-purple-500 px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition">
+                    <a href={`/panel/${panel.id}/invite`} className="bg-green-600 hover:bg-green-500 px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition">
                       <Users className="w-4 h-4" />
                       Invite
                     </a>
@@ -352,7 +352,7 @@ export default function SetupClient() {
             <h2 className="text-2xl font-bold text-red-400 mb-4">Something Went Wrong</h2>
             <p className="text-slate-400 mb-8">{error}</p>
             <div className="flex flex-col gap-3">
-              <button onClick={() => setState('ready_for_setup')} className="bg-purple-600 hover:bg-purple-500 px-6 py-3 rounded-lg">
+              <button onClick={() => setState('ready_for_setup')} className="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg">
                 Try Again
               </button>
               <button onClick={() => { loadPanels(); setState('dashboard'); }} className="text-slate-400 hover:text-white transition">

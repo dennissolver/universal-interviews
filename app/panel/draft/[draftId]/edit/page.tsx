@@ -192,7 +192,7 @@ export default function DraftEditPage() {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-purple-500 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-green-500 animate-spin mx-auto mb-4" />
           <p className="text-slate-400">Loading your draft...</p>
         </div>
       </div>
@@ -208,7 +208,7 @@ export default function DraftEditPage() {
           <p className="text-slate-400 mb-6">{error}</p>
           <button
             onClick={() => router.push('/')}
-            className="bg-purple-600 hover:bg-purple-500 px-6 py-3 rounded-lg"
+            className="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg"
           >
             Go Home
           </button>
@@ -254,7 +254,7 @@ export default function DraftEditPage() {
             <button
               onClick={createPanel}
               disabled={!isValid || creating}
-              className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-600 to-green-600 hover:from-green-500 hover:to-green-500 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -282,8 +282,8 @@ export default function DraftEditPage() {
         {/* Panel Name & Description */}
         <section className="bg-slate-900 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
-              <FileText className="w-5 h-5 text-purple-400" />
+            <div className="w-10 h-10 bg-green-500/20 rounded-xl flex items-center justify-center">
+              <FileText className="w-5 h-5 text-green-400" />
             </div>
             <h2 className="text-lg font-semibold">Panel Details</h2>
           </div>
@@ -295,7 +295,7 @@ export default function DraftEditPage() {
               value={panel.name}
               onChange={(e) => updateField('name', e.target.value)}
               placeholder="e.g., Customer Feedback Study"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
 
@@ -306,7 +306,7 @@ export default function DraftEditPage() {
               onChange={(e) => updateField('description', e.target.value)}
               placeholder="Brief description of what this panel is for..."
               rows={3}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
             />
           </div>
 
@@ -317,7 +317,7 @@ export default function DraftEditPage() {
               value={panel.target_audience || ''}
               onChange={(e) => updateField('target_audience', e.target.value)}
               placeholder="e.g., Enterprise software buyers, Marketing managers"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
         </section>
@@ -339,7 +339,7 @@ export default function DraftEditPage() {
                 value={panel.agent_name}
                 onChange={(e) => updateField('agent_name', e.target.value)}
                 placeholder="e.g., Alex, Jordan, Dr. Smith"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
 
@@ -350,7 +350,7 @@ export default function DraftEditPage() {
                   onClick={() => updateField('voice_gender', 'female')}
                   className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
                     panel.voice_gender === 'female'
-                      ? 'bg-purple-600 text-white'
+                      ? 'bg-green-600 text-white'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -360,7 +360,7 @@ export default function DraftEditPage() {
                   onClick={() => updateField('voice_gender', 'male')}
                   className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
                     panel.voice_gender === 'male'
-                      ? 'bg-purple-600 text-white'
+                      ? 'bg-green-600 text-white'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -376,7 +376,7 @@ export default function DraftEditPage() {
               <select
                 value={panel.tone}
                 onChange={(e) => updateField('tone', e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500"
               >
                 {TONE_OPTIONS.map((tone) => (
                   <option key={tone} value={tone}>{tone}</option>
@@ -391,7 +391,7 @@ export default function DraftEditPage() {
                 <select
                   value={panel.duration_minutes}
                   onChange={(e) => updateField('duration_minutes', parseInt(e.target.value))}
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                 >
                   {DURATION_OPTIONS.map((mins) => (
                     <option key={mins} value={mins}>{mins} minutes</option>
@@ -408,7 +408,7 @@ export default function DraftEditPage() {
               value={panel.greeting || ''}
               onChange={(e) => updateField('greeting', e.target.value)}
               placeholder="Leave blank for default greeting"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
 
@@ -419,7 +419,7 @@ export default function DraftEditPage() {
               value={panel.closing_message || ''}
               onChange={(e) => updateField('closing_message', e.target.value)}
               placeholder="Thank you message at the end of interviews"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
         </section>
@@ -445,7 +445,7 @@ export default function DraftEditPage() {
                 key={index}
                 className="flex items-start gap-3 bg-slate-800/50 rounded-xl p-4 group"
               >
-                <span className="text-purple-400 font-medium text-sm mt-1 w-6">{index + 1}.</span>
+                <span className="text-green-400 font-medium text-sm mt-1 w-6">{index + 1}.</span>
                 <textarea
                   value={question}
                   onChange={(e) => updateQuestion(index, e.target.value)}
@@ -470,12 +470,12 @@ export default function DraftEditPage() {
               onChange={(e) => setNewQuestion(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && addQuestion()}
               placeholder="Add a new question..."
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
             <button
               onClick={addQuestion}
               disabled={!newQuestion.trim()}
-              className="px-4 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-3 bg-green-600 hover:bg-green-500 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-5 h-5" />
             </button>
@@ -502,7 +502,7 @@ export default function DraftEditPage() {
             <button
               onClick={createPanel}
               disabled={!isValid || creating}
-              className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-semibold text-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25"
+              className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-green-600 to-green-600 hover:from-green-500 hover:to-green-500 rounded-xl font-semibold text-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-500/25"
             >
               {creating ? (
                 <Loader2 className="w-5 h-5 animate-spin" />

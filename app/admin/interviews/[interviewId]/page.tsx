@@ -57,7 +57,7 @@ export default function InterviewDetailPage() {
             key={idx}
             className={`p-4 rounded-lg ${
               t.role === 'agent'
-                ? 'bg-slate-800 text-purple-300'
+                ? 'bg-slate-800 text-green-300'
                 : 'bg-slate-900 text-white'
             }`}
           >

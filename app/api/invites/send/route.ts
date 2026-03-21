@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
               from: `${clientConfig.platform.name} <noreply@${process.env.RESEND_DOMAIN || 'resend.dev'}>`,
               to: person.email,
               subject: `You're invited: ${panel.name}`,
-              html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;"><h2>Hi ${person.name},</h2><p>You've been invited to participate in: <strong>${panel.name}</strong></p><a href="${magicLink}" style="display:inline-block;background:#8B5CF6;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin:16px 0;">Start Interview</a><p style="color:#666;font-size:14px;">Or copy: ${magicLink}</p></div>`
+              html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;"><h2>Hi ${person.name},</h2><p>You've been invited to participate in: <strong>${panel.name}</strong></p><a href="${magicLink}" style="display:inline-block;background:#22c55e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin:16px 0;">Start Interview</a><p style="color:#666;font-size:14px;">Or copy: ${magicLink}</p></div>`
             })
           });
 

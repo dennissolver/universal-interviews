@@ -197,8 +197,8 @@ export default function CreatePage() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-green-900 to-slate-900 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-green-400 animate-spin" />
       </div>
     );
   }
@@ -206,7 +206,7 @@ export default function CreatePage() {
   // Error state
   if (error || !platform?.elevenlabs_agent_id) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-green-900 to-slate-900 flex items-center justify-center p-6">
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 max-w-md text-center">
           <p className="text-red-400">
             {error || 'Platform not configured. Please contact support.'}
@@ -217,7 +217,7 @@ export default function CreatePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-green-900 to-slate-900">
       <div className="max-w-4xl mx-auto px-6 py-12">
         {/* Header */}
         <div className="text-center mb-12">
@@ -232,9 +232,9 @@ export default function CreatePage() {
         {/* Main Card */}
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
           {/* Instructions */}
-          <div className="mb-8 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+          <div className="mb-8 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
             <div className="flex items-start gap-3">
-              <Phone className="w-5 h-5 text-purple-400 mt-0.5 flex-shrink-0" />
+              <Phone className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="text-purple-200 font-medium mb-1">How it works:</p>
                 <ol className="text-purple-200/70 text-sm space-y-1 list-decimal list-inside">
@@ -252,7 +252,7 @@ export default function CreatePage() {
             {widgetLoaded ? (
               <elevenlabs-convai agent-id={platform.elevenlabs_agent_id}></elevenlabs-convai>
             ) : (
-              <div className="flex items-center gap-2 text-purple-300">
+              <div className="flex items-center gap-2 text-green-300">
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span>Loading voice assistant...</span>
               </div>
@@ -290,7 +290,7 @@ export default function CreatePage() {
 
           {/* Status indicator */}
           {sessionStartTime && !draftReady && (
-            <p className="text-center text-purple-300/50 text-sm mt-4">
+            <p className="text-center text-green-300/50 text-sm mt-4">
               <Loader2 className="w-4 h-4 inline animate-spin mr-2" />
               Listening for your draft...
             </p>

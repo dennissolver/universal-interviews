@@ -44,7 +44,7 @@ export default function PanelCompletePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+        <Loader2 className="w-8 h-8 text-green-400 animate-spin" />
       </div>
     );
   }
@@ -56,7 +56,7 @@ export default function PanelCompletePage() {
         <div className="flex-1 flex items-center justify-center text-white">
           <div className="text-center">
             <h1 className="text-2xl font-bold mb-4">Panel Not Found</h1>
-            <Link href="/" className="text-purple-400">Go to Dashboard</Link>
+            <Link href="/" className="text-green-400">Go to Dashboard</Link>
           </div>
         </div>
       </div>
@@ -77,7 +77,7 @@ export default function PanelCompletePage() {
             </div>
             <h1 className="text-3xl font-bold mb-2">Great Work!</h1>
             <p className="text-xl text-slate-300">
-              Your <span className="text-purple-400">{panel.name}</span> panel is ready
+              Your <span className="text-green-400">{panel.name}</span> panel is ready
             </p>
           </div>
 
@@ -92,7 +92,7 @@ export default function PanelCompletePage() {
               />
               <button
                 onClick={copyLink}
-                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition ${copied ? 'bg-green-600' : 'bg-purple-600 hover:bg-purple-500'}`}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition ${copied ? 'bg-green-600' : 'bg-green-600 hover:bg-green-500'}`}
               >
                 <Copy className="w-4 h-4" />{copied ? 'Copied!' : 'Copy'}
               </button>
@@ -108,7 +108,7 @@ export default function PanelCompletePage() {
             </Link>
             <Link
               href={`/panel/${panelId}/invite`}
-              className="flex items-center justify-center gap-3 bg-purple-600 hover:bg-purple-500 px-6 py-4 rounded-xl font-semibold transition"
+              className="flex items-center justify-center gap-3 bg-green-600 hover:bg-green-500 px-6 py-4 rounded-xl font-semibold transition"
             >
               <Users className="w-5 h-5" />Invite Interviewees
             </Link>

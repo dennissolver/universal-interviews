@@ -19,13 +19,13 @@ export default function VoiceAvatar({ isActive = false, isSpeaking = false, size
       <div className="relative">
         {isActive && (
           <>
-            <div className={`absolute inset-0 ${sizeClasses[size]} rounded-full bg-purple-500/20 animate-ping`} />
-            <div className={`absolute inset-0 ${sizeClasses[size]} rounded-full bg-purple-500/10 animate-pulse`} />
+            <div className={`absolute inset-0 ${sizeClasses[size]} rounded-full bg-green-500/20 animate-ping`} />
+            <div className={`absolute inset-0 ${sizeClasses[size]} rounded-full bg-green-500/10 animate-pulse`} />
           </>
         )}
         {isSpeaking && <div className={`absolute inset-0 ${sizeClasses[size]} rounded-full border-4 border-green-400 animate-pulse`} />}
-        <div className={`relative ${sizeClasses[size]} rounded-full flex items-center justify-center ${isActive ? 'bg-gradient-to-br from-purple-600 to-purple-800' : 'bg-slate-800'} shadow-xl`}>
-          <Bot className={`${iconSizes[size]} ${isActive ? 'text-white' : 'text-purple-400'}`} />
+        <div className={`relative ${sizeClasses[size]} rounded-full flex items-center justify-center ${isActive ? 'bg-gradient-to-br from-green-600 to-green-800' : 'bg-slate-800'} shadow-xl`}>
+          <Bot className={`${iconSizes[size]} ${isActive ? 'text-white' : 'text-green-400'}`} />
         </div>
       </div>
       {label && <p className={`mt-3 text-sm ${isActive ? 'text-green-400' : 'text-slate-400'}`}>{label}</p>}

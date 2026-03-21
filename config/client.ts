@@ -14,8 +14,8 @@ export const clientConfig = {
   theme: {
     mode: "dark" as "dark" | "light",
     colors: {
-      primary: "#8B5CF6",
-      accent: "#10B981",
+      primary: "#22c55e",
+      accent: "#22c55e",
       background: "#0F172A",
     },
   },

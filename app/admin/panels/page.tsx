@@ -83,7 +83,7 @@ export default function PanelsPage() {
             </Link>
             <Link
               href="/"
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition"
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg transition"
             >
               <Plus className="w-4 h-4" />
               New Panel
@@ -97,7 +97,7 @@ export default function PanelsPage() {
             <p className="text-slate-400 mb-4">No active panels yet</p>
             <Link
               href="/"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg transition"
             >
               <Plus className="w-4 h-4" />
               Create Your First Panel

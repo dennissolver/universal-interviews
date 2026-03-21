@@ -4,9 +4,10 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #8B5CF6;
-  --color-accent: #10B981;
+  --color-primary: #22c55e;
+  --color-accent: #22c55e;
   --color-background: #0F172A;
+  --primary: oklch(0.586 0.19 145.71);
 }
 
 body {
